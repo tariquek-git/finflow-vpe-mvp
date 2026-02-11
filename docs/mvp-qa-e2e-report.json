@@ -1,0 +1,82 @@
+{
+  "date": "2026-02-11T19:04:40.784Z",
+  "baseUrl": "http://127.0.0.1:50306",
+  "checks": [
+    {
+      "id": "A0",
+      "name": "Initial app load",
+      "ok": true,
+      "details": "Quick Help visible"
+    },
+    {
+      "id": "A1",
+      "name": "Create nodes and connect edge",
+      "ok": true,
+      "details": "nodes=2 edges=1"
+    },
+    {
+      "id": "A2",
+      "name": "Prevent self-loop edge",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "id": "A4N",
+      "name": "Node inspector updates node immediately",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "id": "A5",
+      "name": "Edge label rules",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "id": "A3",
+      "name": "Duplicate/delete/undo/redo flow",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "id": "A6",
+      "name": "Lane manager edit/reorder/orientation",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "id": "B1A",
+      "name": "Save JSON download",
+      "ok": true,
+      "details": "nodes=2"
+    },
+    {
+      "id": "B1B",
+      "name": "Import JSON restore",
+      "ok": true,
+      "details": "nodes=2"
+    },
+    {
+      "id": "B3",
+      "name": "LocalStorage restore on reload",
+      "ok": true,
+      "details": "nodes=2"
+    },
+    {
+      "id": "C1C2C3",
+      "name": "PNG/PDF export toggles and output",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "id": "D1D2D3",
+      "name": "75-node import and auto-layout",
+      "ok": true,
+      "details": "autoLayoutClickToStable~579ms"
+    }
+  ],
+  "summary": {
+    "passed": 12,
+    "failed": 0
+  }
+}

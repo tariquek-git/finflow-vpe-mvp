@@ -1,0 +1,190 @@
+{
+  "version": "1.0.0",
+  "timestamp": "2026-02-11T00:00:00.000Z",
+  "nodes": [
+    {
+      "id": "node-sponsor",
+      "type": "bankNode",
+      "position": { "x": -460, "y": -40 },
+      "width": 220,
+      "height": 110,
+      "data": {
+        "id": "node-sponsor",
+        "nodeType": "Sponsor Bank",
+        "displayName": "Sponsor Bank",
+        "description": "Bank sponsor for program",
+        "jurisdiction": "US",
+        "roleInFlow": "settler",
+        "regulator": "OCC",
+        "settlementAccess": "yes",
+        "integrationMode": "Blank",
+        "postingTiming": "Blank",
+        "coreType": "Blank",
+        "heldAt": "",
+        "custodyModel": "Blank",
+        "ledgerType": "Blank",
+        "balanceModel": "Blank",
+        "sourceOfTruth": "Blank",
+        "method": "Blank",
+        "owner": "Blank",
+        "treasuryScope": "Blank"
+      }
+    },
+    {
+      "id": "node-fintech",
+      "type": "bankNode",
+      "position": { "x": -120, "y": -40 },
+      "width": 220,
+      "height": 110,
+      "data": {
+        "id": "node-fintech",
+        "nodeType": "Fintech Program",
+        "displayName": "Fintech Program",
+        "description": "Program orchestration",
+        "jurisdiction": "US",
+        "roleInFlow": "message sender",
+        "regulator": "",
+        "settlementAccess": "Blank",
+        "integrationMode": "Blank",
+        "postingTiming": "Blank",
+        "coreType": "Blank",
+        "heldAt": "",
+        "custodyModel": "Blank",
+        "ledgerType": "Blank",
+        "balanceModel": "Blank",
+        "sourceOfTruth": "Blank",
+        "method": "Blank",
+        "owner": "Blank",
+        "treasuryScope": "Blank"
+      }
+    },
+    {
+      "id": "node-ledger",
+      "type": "bankNode",
+      "position": { "x": 240, "y": -40 },
+      "width": 220,
+      "height": 110,
+      "data": {
+        "id": "node-ledger",
+        "nodeType": "Ledger",
+        "displayName": "Ledger Of Record",
+        "description": "Internal ledger",
+        "jurisdiction": "Blank",
+        "roleInFlow": "ledger of record",
+        "regulator": "",
+        "settlementAccess": "Blank",
+        "integrationMode": "Blank",
+        "postingTiming": "Blank",
+        "coreType": "Blank",
+        "heldAt": "",
+        "custodyModel": "Blank",
+        "ledgerType": "real time",
+        "balanceModel": "sub ledger",
+        "sourceOfTruth": "internal",
+        "method": "Blank",
+        "owner": "Blank",
+        "treasuryScope": "Blank"
+      }
+    },
+    {
+      "id": "node-settlement",
+      "type": "bankNode",
+      "position": { "x": 580, "y": -40 },
+      "width": 220,
+      "height": 110,
+      "data": {
+        "id": "node-settlement",
+        "nodeType": "Settlement Account",
+        "displayName": "Settlement Account",
+        "description": "End settlement account",
+        "jurisdiction": "US",
+        "roleInFlow": "funds holder",
+        "regulator": "",
+        "settlementAccess": "Blank",
+        "integrationMode": "Blank",
+        "postingTiming": "Blank",
+        "coreType": "Blank",
+        "heldAt": "Sponsor Bank",
+        "custodyModel": "omnibus",
+        "ledgerType": "Blank",
+        "balanceModel": "Blank",
+        "sourceOfTruth": "Blank",
+        "method": "Blank",
+        "owner": "Blank",
+        "treasuryScope": "Blank"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-1",
+      "source": "node-sponsor",
+      "target": "node-fintech",
+      "sourceHandle": "right",
+      "targetHandle": "left",
+      "type": "straight",
+      "data": {
+        "id": "edge-1",
+        "rail": "ACH",
+        "settlementType": "Batch",
+        "direction": "Push",
+        "messageOrFunds": "Both",
+        "notes": "Sponsor to fintech updates",
+        "networkName": "Blank",
+        "transactionStage": "Blank"
+      }
+    },
+    {
+      "id": "edge-2",
+      "source": "node-fintech",
+      "target": "node-ledger",
+      "sourceHandle": "right",
+      "targetHandle": "left",
+      "type": "straight",
+      "data": {
+        "id": "edge-2",
+        "rail": "FedNow",
+        "settlementType": "Realtime",
+        "direction": "Push",
+        "messageOrFunds": "Funds Movement",
+        "notes": "Program posting",
+        "networkName": "Blank",
+        "transactionStage": "Blank"
+      }
+    },
+    {
+      "id": "edge-3",
+      "source": "node-ledger",
+      "target": "node-settlement",
+      "sourceHandle": "right",
+      "targetHandle": "left",
+      "type": "straight",
+      "data": {
+        "id": "edge-3",
+        "rail": "Card Network",
+        "settlementType": "T plus 1",
+        "direction": "Push",
+        "messageOrFunds": "Both",
+        "notes": "Clearing to settlement",
+        "networkName": "Visa",
+        "transactionStage": "clearing"
+      }
+    }
+  ],
+  "lanes": [
+    { "id": "lane-1", "label": "Initiation", "order": 0, "size": 220, "visible": true, "orientation": "horizontal" },
+    { "id": "lane-2", "label": "Processing", "order": 1, "size": 220, "visible": true, "orientation": "horizontal" },
+    { "id": "lane-3", "label": "Settlement", "order": 2, "size": 220, "visible": true, "orientation": "horizontal" }
+  ],
+  "ui": {
+    "darkMode": false,
+    "backgroundMode": "grid",
+    "snapToGrid": false,
+    "autoLayoutDirection": "LR",
+    "showSwimlanes": true,
+    "laneOrientation": "horizontal",
+    "showMiniMap": false,
+    "exportIncludeSwimlanes": true,
+    "exportIncludeBackground": true
+  }
+}
