@@ -65,3 +65,4 @@ Full gate (all e2e suites):
 
 - Release/tag policy: `docs/RELEASE_POLICY.md`
 - Launch checklist: `docs/LAUNCH_CHECKLIST.md`
+- Vercel setup guide: `docs/VERCEL_SETUP.md`
