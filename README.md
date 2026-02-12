@@ -1,0 +1,67 @@
+# FinFlow Builder
+
+## MVP Definition
+
+Canonical MVP scope and acceptance criteria live in `MVP_DEFINITION.md`.
+
+## MVP Run Path (canonical)
+
+1. `npm install`
+2. `npm run doctor`
+3. `npm run dev`
+4. Open `http://127.0.0.1:3000`
+
+Notes:
+- Public MVP ships with AI disabled by default (`VITE_ENABLE_AI=false`).
+- Core editor works without any API key.
+- For local AI-only experiments, set:
+  - `VITE_ENABLE_AI=true`
+  - `VITE_GEMINI_API_KEY=<key>`
+
+## Editor Shortcuts
+
+- `Cmd/Ctrl + Z`: Undo
+- `Cmd/Ctrl + Shift + Z` (or `Ctrl + Y`): Redo
+- `Cmd/Ctrl + D`: Duplicate selected nodes
+- `Delete` / `Backspace`: Delete selected node or edge
+- Arrow keys: Nudge selected nodes (`Shift` = larger step)
+- Hold `Space` + drag (or middle mouse drag): Pan canvas
+
+## QA Gates
+
+Install browsers once:
+
+- `npm run test:smoke:install`
+
+Minimum pre-merge gate:
+
+- `npm run test:smoke`
+- `npm run test:mvp`
+- `npm run test:mvp:onboarding`
+- `npm run test:mvp:feedback`
+
+Acceptance flow coverage:
+
+- `npm run test:acceptance`
+
+Accessibility checks:
+
+- `npm run test:a11y`
+
+Full gate (all e2e suites):
+
+- `npm run test:qa`
+
+## Vercel Launch Defaults
+
+- Build command: `npm run build`
+- Output directory: `dist`
+- Production branch: `main`
+- Preview deploys: enabled for PRs
+- Env defaults (preview + production):
+  - `VITE_ENABLE_AI=false`
+
+## Launch Operations
+
+- Release/tag policy: `docs/RELEASE_POLICY.md`
+- Launch checklist: `docs/LAUNCH_CHECKLIST.md`

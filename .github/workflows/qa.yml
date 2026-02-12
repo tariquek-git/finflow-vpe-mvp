@@ -38,3 +38,12 @@ jobs:
 
       - name: Smoke tests
         run: npm run test:smoke
+
+      - name: MVP flow tests
+        run: npm run test:mvp
+
+      - name: MVP onboarding tests
+        run: npm run test:mvp:onboarding
+
+      - name: MVP feedback tests
+        run: npm run test:mvp:feedback

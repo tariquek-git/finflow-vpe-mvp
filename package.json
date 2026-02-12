@@ -1,0 +1,45 @@
+{
+  "name": "new-copy-of-copy-of-finflow-builder---as-at-sat-sat-sun-stop---keep",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "doctor": "node scripts/doctor.mjs",
+    "dev": "vite --host 127.0.0.1 --port 3000",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test:smoke": "playwright test e2e/smoke.spec.ts",
+    "test:mvp": "playwright test e2e/mvp.spec.ts",
+    "test:mvp:onboarding": "playwright test e2e/mvp-onboarding.spec.ts",
+    "test:mvp:feedback": "playwright test e2e/mvp-feedback.spec.ts",
+    "test:acceptance": "playwright test e2e/acceptance.spec.ts",
+    "test:a11y": "playwright test e2e/a11y.spec.ts",
+    "test:qa": "playwright test",
+    "test:smoke:headed": "playwright test --headed",
+    "test:smoke:install": "playwright install chromium"
+  },
+  "dependencies": {
+    "@google/genai": "^1.40.0",
+    "@hookform/resolvers": "^5.2.2",
+    "@xyflow/react": "^12.10.0",
+    "html-to-image": "^1.11.13",
+    "jspdf": "^4.1.0",
+    "lucide-react": "^0.563.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-hook-form": "^7.71.1",
+    "zod": "^4.3.6",
+    "zustand": "^5.0.11"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.11.1",
+    "@playwright/test": "^1.58.2",
+    "@types/node": "^22.14.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "autoprefixer": "^10.4.24",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.17",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0"
+  }
+}
