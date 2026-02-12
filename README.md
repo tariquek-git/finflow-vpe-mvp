@@ -59,6 +59,23 @@ Run full gate + browser QA:
 npm run qa:mvp:full
 ```
 
+## CI
+
+- GitHub Actions workflow: `.github/workflows/ci.yml`
+- Gate includes lint, tests, build, and Playwright MVP E2E checks.
+
+## Deployment (Vercel)
+
+- SPA rewrite config is in `vercel.json`.
+- Vercel build settings:
+  - Build command: `npm run build`
+  - Output directory: `dist`
+
+## Runtime Environment
+
+- `VITE_SENTRY_DSN` (optional): enables browser error monitoring when set.
+- `VITE_APP_RELEASE` (optional): release version attached to monitoring events.
+
 ## MVP Features
 
 - Top bar actions: New, Save JSON, Import JSON, Load Sample, Export PNG/PDF

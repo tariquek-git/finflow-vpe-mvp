@@ -1,6 +1,6 @@
 {
-  "date": "2026-02-11T19:04:40.784Z",
-  "baseUrl": "http://127.0.0.1:50306",
+  "date": "2026-02-12T21:51:03.064Z",
+  "baseUrl": "http://127.0.0.1:50390",
   "checks": [
     {
       "id": "A0",
@@ -23,6 +23,12 @@
     {
       "id": "A4N",
       "name": "Node inspector updates node immediately",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "id": "A4E",
+      "name": "Edge inspector updates edge immediately",
       "ok": true,
       "details": ""
     },
@@ -63,6 +69,12 @@
       "details": "nodes=2"
     },
     {
+      "id": "B4",
+      "name": "New resets graph and UI defaults",
+      "ok": true,
+      "details": ""
+    },
+    {
       "id": "C1C2C3",
       "name": "PNG/PDF export toggles and output",
       "ok": true,
@@ -72,11 +84,11 @@
       "id": "D1D2D3",
       "name": "75-node import and auto-layout",
       "ok": true,
-      "details": "autoLayoutClickToStable~579ms"
+      "details": "autoLayoutClickToStable~695ms"
     }
   ],
   "summary": {
-    "passed": 12,
+    "passed": 14,
     "failed": 0
   }
 }

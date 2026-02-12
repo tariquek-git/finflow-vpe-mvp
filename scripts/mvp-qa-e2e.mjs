@@ -10,6 +10,19 @@ const preferredPort = 4173;
 const artifactRoot = path.join(cwd, 'qa-artifacts');
 const runStamp = new Date().toISOString().replace(/[:.]/g, '-');
 const runDir = path.join(artifactRoot, runStamp);
+const storageKey = 'banking-diagram-mvp-v1';
+const defaultUi = {
+  darkMode: false,
+  backgroundMode: 'grid',
+  snapToGrid: false,
+  autoLayoutDirection: 'LR',
+  showSwimlanes: true,
+  laneOrientation: 'horizontal',
+  showMiniMap: false,
+  exportIncludeSwimlanes: true,
+  exportIncludeBackground: true,
+};
+const defaultLaneLabels = ['Initiation', 'Processing', 'Settlement'];
 mkdirSync(runDir, { recursive: true });
 
 const report = {
@@ -149,13 +162,21 @@ async function importJsonFile(page, filePath) {
 }
 
 async function openViewMenu(page) {
-  await page.getByRole('button', { name: 'View', exact: true }).click();
-  await page.getByText('Background').waitFor({ timeout: 5000 });
+  const marker = page.getByText('Background');
+  const alreadyOpen = await marker.isVisible().catch(() => false);
+  if (!alreadyOpen) {
+    await page.getByRole('button', { name: 'View', exact: true }).click();
+  }
+  await marker.waitFor({ timeout: 5000 });
 }
 
 async function openExportMenu(page) {
-  await page.getByRole('button', { name: 'Export', exact: true }).click();
-  await page.getByText('Include swimlanes').waitFor({ timeout: 5000 });
+  const marker = page.getByText('Include swimlanes');
+  const alreadyOpen = await marker.isVisible().catch(() => false);
+  if (!alreadyOpen) {
+    await page.getByRole('button', { name: 'Export', exact: true }).click();
+  }
+  await marker.waitFor({ timeout: 5000 });
 }
 
 async function connectNodes(page, sourceIndex, targetIndex) {
@@ -185,6 +206,16 @@ async function expectNodeCount(page, expected, label, timeoutMs = 5000) {
   } catch {
     throw new Error(`${label}: expected node count ${expected}, actual ${await nodeCount(page)}`);
   }
+}
+
+async function readStoredPayload(page) {
+  return page.evaluate((key) => {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) {
+      return null;
+    }
+    return JSON.parse(raw);
+  }, storageKey);
 }
 
 function markdownStatus(ok) {
@@ -321,8 +352,20 @@ try {
   }
 
   try {
-    markProgress('A5 start');
+    markProgress('A4E start');
     await page.locator('.react-flow__edge-interaction').first().click();
+    const railSelect = page.locator('label:has-text("Rail") select');
+    await railSelect.selectOption('RTP');
+    await waitFor(async () => (await page.locator('.react-flow__edge-text').filter({ hasText: 'RTP' }).count()) > 0, 5000);
+    addCheck('A4E', 'Edge inspector updates edge immediately', true);
+    markProgress('A4E pass');
+  } catch (error) {
+    addCheck('A4E', 'Edge inspector updates edge immediately', false, String(error));
+    markProgress('A4E fail');
+  }
+
+  try {
+    markProgress('A5 start');
     const railSelect = page.locator('label:has-text("Rail") select');
     const networkSelect = page.locator('label:has-text("Network Name") select');
 
@@ -448,6 +491,63 @@ try {
   } catch (error) {
     addCheck('B3', 'LocalStorage restore on reload', false, String(error));
     markProgress('B3 fail');
+  }
+
+  try {
+    markProgress('B4 start');
+    await openViewMenu(page);
+    await page.getByRole('button', { name: /^Swimlanes (On|Off)$/ }).click();
+    await page.getByRole('button', { name: /^MiniMap (On|Off)$/ }).click();
+    await page.getByRole('button', { name: /^Snap (On|Off)$/ }).click();
+    await page.getByRole('button', { name: /Dark mode/i }).click();
+    await page.getByRole('button', { name: /none/i }).click();
+    await page.getByRole('button', { name: 'View', exact: true }).click();
+
+    await page.getByRole('button', { name: 'TB', exact: true }).click();
+
+    await openExportMenu(page);
+    await setCheckbox(page, 'Include swimlanes', false);
+    await setCheckbox(page, 'Include background', false);
+    await page.getByRole('button', { name: 'Export', exact: true }).click();
+
+    await openViewMenu(page);
+    await page.getByRole('button', { name: 'Lanes', exact: true }).click();
+    await page.getByText('Swimlane Manager').waitFor({ timeout: 5000 });
+    await page.getByRole('button', { name: 'vertical' }).click();
+    const modal = page.locator('.fixed.inset-0').first();
+    await modal.locator('button').first().click();
+    await page.getByText('Swimlane Manager').waitFor({ state: 'hidden', timeout: 5000 });
+
+    await page.getByRole('button', { name: 'New', exact: true }).click();
+    await waitFor(async () => (await nodeCount(page)) === 0 && (await edgeCount(page)) === 0, 7000);
+    await waitFor(async () => (await page.getByText('Quick Help').count()) > 0, 5000);
+    await sleep(700);
+
+    const payload = await readStoredPayload(page);
+    assert(payload && typeof payload === 'object', 'Expected persisted payload after New reset');
+    assert(payload.ui && typeof payload.ui === 'object', 'Expected persisted ui in payload after New reset');
+    assert(Array.isArray(payload.lanes), 'Expected persisted lanes in payload after New reset');
+
+    for (const [key, expected] of Object.entries(defaultUi)) {
+      assert(payload.ui[key] === expected, `Expected ui.${key}=${String(expected)}, received ${String(payload.ui[key])}`);
+    }
+
+    const lanes = [...payload.lanes].sort((a, b) => a.order - b.order);
+    assert(lanes.length === defaultLaneLabels.length, `Expected ${defaultLaneLabels.length} default lanes, got ${lanes.length}`);
+    for (let index = 0; index < lanes.length; index += 1) {
+      const lane = lanes[index];
+      assert(lane.label === defaultLaneLabels[index], `Expected lane[${index}] label "${defaultLaneLabels[index]}", got "${lane.label}"`);
+      assert(lane.order === index, `Expected lane[${index}] order=${index}, got ${lane.order}`);
+      assert(lane.size === 220, `Expected lane[${index}] size=220, got ${lane.size}`);
+      assert(lane.visible === true, `Expected lane[${index}] visible=true, got ${String(lane.visible)}`);
+      assert(lane.orientation === 'horizontal', `Expected lane[${index}] orientation=horizontal, got ${lane.orientation}`);
+    }
+
+    addCheck('B4', 'New resets graph and UI defaults', true);
+    markProgress('B4 pass');
+  } catch (error) {
+    addCheck('B4', 'New resets graph and UI defaults', false, String(error));
+    markProgress('B4 fail');
   }
 
   try {
