@@ -29,6 +29,7 @@ interface FlowCanvasProps {
   onSelectNodes: (ids: string[]) => void;
   onSelectEdge: (id: string | null) => void;
   onUpdateNodePosition: (id: string, pos: Position) => void;
+  onUpdateNodePositionsBatch?: (updates: Array<{ id: string; pos: Position }>) => void;
   onBeginNodeMove: (ids: string[]) => void;
   onConnect: (sourceId: string, targetId: string, spIdx: number, tpIdx: number) => void;
   onAddNode: (type: EntityType, pos?: Position) => void;
@@ -115,6 +116,7 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
   onSelectNodes,
   onSelectEdge,
   onUpdateNodePosition,
+  onUpdateNodePositionsBatch,
   onBeginNodeMove,
   onConnect,
   onAddNode,
@@ -154,10 +156,20 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
 
   const containerRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef(viewport);
+  const pointerFrameRef = useRef<number | null>(null);
+  const latestPointerInputRef = useRef<{ clientX: number; clientY: number; altKey: boolean } | null>(null);
 
   useEffect(() => {
     viewportRef.current = viewport;
   }, [viewport]);
+
+  useEffect(() => {
+    return () => {
+      if (pointerFrameRef.current !== null) {
+        window.cancelAnimationFrame(pointerFrameRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -397,14 +409,19 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
     onSelectEdge(null);
   };
 
-  const handleMouseMove = (event: React.MouseEvent) => {
-    const worldPos = screenToWorld(event.clientX, event.clientY);
+  const processMouseMoveFrame = useCallback(() => {
+    pointerFrameRef.current = null;
+    const latest = latestPointerInputRef.current;
+    if (!latest) return;
+
+    const { clientX, clientY, altKey } = latest;
+    const worldPos = screenToWorld(clientX, clientY);
     setPointerWorld(worldPos);
     onPointerWorldChange?.(worldPos);
 
     if (panningState) {
-      const deltaX = event.clientX - panningState.startX;
-      const deltaY = event.clientY - panningState.startY;
+      const deltaX = clientX - panningState.startX;
+      const deltaY = clientY - panningState.startY;
       onViewportChange({
         ...viewportRef.current,
         x: panningState.baseX + deltaX,
@@ -420,7 +437,7 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
       };
       setSelectionMarquee(nextMarquee);
 
-      autoScrollCanvasIfNeeded(event.clientX, event.clientY);
+      autoScrollCanvasIfNeeded(clientX, clientY);
 
       const minX = Math.min(nextMarquee.start.x, nextMarquee.current.x);
       const minY = Math.min(nextMarquee.start.y, nextMarquee.current.y);
@@ -443,7 +460,9 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
     }
 
     if (!draggingNodes) {
-      setSnapGuide({ x: null, y: null });
+      if (snapGuide.x !== null || snapGuide.y !== null) {
+        setSnapGuide({ x: null, y: null });
+      }
       return;
     }
 
@@ -452,7 +471,7 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
       setHasRecordedDragHistory(true);
     }
 
-    autoScrollCanvasIfNeeded(event.clientX, event.clientY);
+    autoScrollCanvasIfNeeded(clientX, clientY);
 
     const deltaX = worldPos.x - draggingNodes.pointerStart.x;
     const deltaY = worldPos.y - draggingNodes.pointerStart.y;
@@ -460,7 +479,7 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
     let appliedDeltaX = deltaX;
     let appliedDeltaY = deltaY;
 
-    if (snapToGrid && !event.altKey && draggingNodes.ids.length > 0) {
+    if (snapToGrid && !altKey && draggingNodes.ids.length > 0) {
       const primaryId = draggingNodes.ids[0];
       const primaryInitial = draggingNodes.initialPositions[primaryId];
       if (primaryInitial) {
@@ -468,24 +487,75 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
         const snappedPrimaryY = Math.round((primaryInitial.y + deltaY) / GRID_SIZE) * GRID_SIZE;
         appliedDeltaX = snappedPrimaryX - primaryInitial.x;
         appliedDeltaY = snappedPrimaryY - primaryInitial.y;
-        setSnapGuide({ x: snappedPrimaryX, y: snappedPrimaryY });
+        setSnapGuide((prev) =>
+          prev.x === snappedPrimaryX && prev.y === snappedPrimaryY ? prev : { x: snappedPrimaryX, y: snappedPrimaryY }
+        );
       }
-    } else {
+    } else if (snapGuide.x !== null || snapGuide.y !== null) {
       setSnapGuide({ x: null, y: null });
     }
 
+    const updates: Array<{ id: string; pos: Position }> = [];
     for (const id of draggingNodes.ids) {
       const initial = draggingNodes.initialPositions[id];
       if (!initial) continue;
-      onUpdateNodePosition(id, {
-        x: initial.x + appliedDeltaX,
-        y: initial.y + appliedDeltaY
+      updates.push({
+        id,
+        pos: {
+          x: initial.x + appliedDeltaX,
+          y: initial.y + appliedDeltaY
+        }
       });
     }
+
+    if (updates.length === 0) return;
+    if (onUpdateNodePositionsBatch) {
+      onUpdateNodePositionsBatch(updates);
+      return;
+    }
+
+    for (const update of updates) {
+      onUpdateNodePosition(update.id, update.pos);
+    }
+  }, [
+    autoScrollCanvasIfNeeded,
+    draggingNodes,
+    hasRecordedDragHistory,
+    onBeginNodeMove,
+    onPointerWorldChange,
+    onSelectNodes,
+    onUpdateNodePosition,
+    onUpdateNodePositionsBatch,
+    onViewportChange,
+    panningState,
+    presentableNodes,
+    screenToWorld,
+    selectionMarquee,
+    snapGuide.x,
+    snapGuide.y,
+    snapToGrid
+  ]);
+
+  const handleMouseMove = (event: React.MouseEvent) => {
+    latestPointerInputRef.current = {
+      clientX: event.clientX,
+      clientY: event.clientY,
+      altKey: event.altKey
+    };
+
+    if (pointerFrameRef.current !== null) return;
+    pointerFrameRef.current = window.requestAnimationFrame(processMouseMoveFrame);
   };
 
   const handleMouseUp = () => {
+    if (pointerFrameRef.current !== null) {
+      window.cancelAnimationFrame(pointerFrameRef.current);
+      pointerFrameRef.current = null;
+    }
+    latestPointerInputRef.current = null;
+
     if (draggingNodes && showSwimlanes) {
+      const laneClampedUpdates: Array<{ id: string; pos: Position }> = [];
       for (const id of draggingNodes.ids) {
         const node = nodeById.get(id);
         if (!node || node.type === EntityType.ANCHOR) continue;
@@ -497,10 +567,23 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
         const nextY = clamp(node.position.y, laneTop, laneBottom);
 
         if (Math.abs(nextY - node.position.y) > 0.1) {
-          onUpdateNodePosition(id, {
-            x: node.position.x,
-            y: nextY
+          laneClampedUpdates.push({
+            id,
+            pos: {
+              x: node.position.x,
+              y: nextY
+            }
           });
+        }
+      }
+
+      if (laneClampedUpdates.length > 0) {
+        if (onUpdateNodePositionsBatch) {
+          onUpdateNodePositionsBatch(laneClampedUpdates);
+        } else {
+          for (const update of laneClampedUpdates) {
+            onUpdateNodePosition(update.id, update.pos);
+          }
         }
       }
     }

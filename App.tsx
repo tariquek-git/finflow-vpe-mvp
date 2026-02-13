@@ -56,6 +56,7 @@ const ONBOARDING_DISMISSED_STORAGE_KEY = 'finflow-builder.quickstart.dismissed.v
 const TOAST_TIMEOUT_MS = 4200;
 
 const createId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const getSwimlaneIdForY = (y: number) => Math.floor(Math.max(0, y) / 300) + 1;
 
 const STARTER_SNAPSHOT: DiagramSnapshot = {
   nodes: [
@@ -680,6 +681,41 @@ const App: React.FC = () => {
       setIsInspectorOpen(false);
     }
   }, [isMobileViewport]);
+
+  const handleUpdateNodePosition = useCallback((id: string, pos: Position) => {
+    setNodes((prev) =>
+      prev.map((node) =>
+        node.id === id
+          ? {
+              ...node,
+              position: pos,
+              swimlaneId: getSwimlaneIdForY(pos.y)
+            }
+          : node
+      )
+    );
+  }, []);
+
+  const handleUpdateNodePositionsBatch = useCallback((updates: Array<{ id: string; pos: Position }>) => {
+    if (updates.length === 0) return;
+
+    const updateMap = new Map<string, Position>();
+    for (const update of updates) {
+      updateMap.set(update.id, update.pos);
+    }
+
+    setNodes((prev) =>
+      prev.map((node) => {
+        const nextPos = updateMap.get(node.id);
+        if (!nextPos) return node;
+        return {
+          ...node,
+          position: nextPos,
+          swimlaneId: getSwimlaneIdForY(nextPos.y)
+        };
+      })
+    );
+  }, []);
 
   const getCanvasCenterWorld = useCallback(() => {
     const sidebarOffset = isSidebarOpen ? 256 : 0;
@@ -1913,19 +1949,8 @@ const App: React.FC = () => {
             selectedEdgeId={selectedEdgeId}
             onSelectNodes={handleSelectNodes}
             onSelectEdge={handleSelectEdge}
-            onUpdateNodePosition={(id, pos) =>
-              setNodes((prev) =>
-                prev.map((n) =>
-                  n.id === id
-                    ? {
-                        ...n,
-                        position: pos,
-                        swimlaneId: Math.floor(Math.max(0, pos.y) / 300) + 1
-                      }
-                    : n
-                )
-              )
-            }
+            onUpdateNodePosition={handleUpdateNodePosition}
+            onUpdateNodePositionsBatch={handleUpdateNodePositionsBatch}
             onBeginNodeMove={(_ids) => pushHistory()}
             onConnect={handleConnect}
             isDarkMode={isDarkMode}
