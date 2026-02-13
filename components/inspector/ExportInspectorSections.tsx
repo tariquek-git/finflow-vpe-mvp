@@ -7,6 +7,7 @@ type ExportInspectorSectionsProps = {
   onResetCanvas: () => void;
   onImportDiagram: () => void;
   onExportDiagram: () => void;
+  onExportSvg: () => void;
   onExportPng: () => void;
   onExportPdf: () => void;
 };
@@ -31,6 +32,7 @@ const ExportInspectorSections: React.FC<ExportInspectorSectionsProps> = ({
   onResetCanvas,
   onImportDiagram,
   onExportDiagram,
+  onExportSvg,
   onExportPng,
   onExportPdf
 }) => {
@@ -43,6 +45,14 @@ const ExportInspectorSections: React.FC<ExportInspectorSectionsProps> = ({
         className="ui-button-primary inline-flex w-full items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold"
       >
         <ArrowDownToLine className="h-4 w-4" /> Export JSON
+      </button>
+      <button
+        type="button"
+        data-testid="toolbar-export-svg"
+        onClick={onExportSvg}
+        className="ui-button-secondary inline-flex w-full items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold"
+      >
+        <ArrowDownToLine className="h-4 w-4" /> Export SVG
       </button>
       <button
         type="button"

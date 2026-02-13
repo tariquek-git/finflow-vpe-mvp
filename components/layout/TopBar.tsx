@@ -38,6 +38,7 @@ type TopBarProps = {
   onResetCanvas: () => void;
   onImportDiagram: () => void;
   onExportDiagram: () => void;
+  onExportSvg: () => void;
   onExportPng: () => void;
   onExportPdf: () => void;
   centerSlot?: React.ReactNode;
@@ -66,6 +67,7 @@ const TopBar: React.FC<TopBarProps> = ({
   onResetCanvas,
   onImportDiagram,
   onExportDiagram,
+  onExportSvg,
   onExportPng,
   onExportPdf,
   centerSlot
@@ -231,6 +233,14 @@ const TopBar: React.FC<TopBarProps> = ({
                     isDarkMode ? 'border-slate-700 bg-slate-900' : 'border-slate-300 bg-white'
                   }`}
                 >
+                  <button
+                    type="button"
+                    data-testid="toolbar-export-svg"
+                    onClick={onExportSvg}
+                    className="ui-button-secondary inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold"
+                  >
+                    <Download className="h-3.5 w-3.5" /> Export SVG
+                  </button>
                   <button
                     type="button"
                     data-testid="toolbar-export-png"

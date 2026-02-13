@@ -57,6 +57,7 @@ interface InspectorProps {
   onResetCanvas: () => void;
   onImportDiagram: () => void;
   onExportDiagram: () => void;
+  onExportSvg: () => void;
   onExportPng: () => void;
   onExportPdf: () => void;
   activeTabRequest?: InspectorTab | null;
@@ -187,6 +188,7 @@ const Inspector: React.FC<InspectorProps> = ({
   onResetCanvas,
   onImportDiagram,
   onExportDiagram,
+  onExportSvg,
   onExportPng,
   onExportPdf,
   activeTabRequest
@@ -622,6 +624,7 @@ const Inspector: React.FC<InspectorProps> = ({
             onResetCanvas={onResetCanvas}
             onImportDiagram={onImportDiagram}
             onExportDiagram={onExportDiagram}
+            onExportSvg={onExportSvg}
             onExportPng={onExportPng}
             onExportPdf={onExportPdf}
           />

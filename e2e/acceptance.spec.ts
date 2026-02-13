@@ -155,12 +155,19 @@ test('edge style controls respond for selected connector', async ({ page }) => {
   await midArrowButton.click();
 });
 
-test('export controls include JSON/PNG/PDF and trigger downloads', async ({ page }) => {
+test('export controls include JSON/SVG/PNG/PDF and trigger downloads', async ({ page }) => {
   await expect(page.getByTestId('toolbar-export-json').first()).toBeVisible();
 
   await page.locator('summary:has-text("More")').first().click();
+  await expect(page.getByTestId('toolbar-export-svg').first()).toBeVisible();
   await expect(page.getByTestId('toolbar-export-png').first()).toBeVisible();
   await expect(page.getByTestId('toolbar-export-pdf').first()).toBeVisible();
+
+  const [svgDownload] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByTestId('toolbar-export-svg').first().click()
+  ]);
+  expect((await svgDownload.suggestedFilename()).toLowerCase()).toContain('.svg');
 
   const [pngDownload] = await Promise.all([
     page.waitForEvent('download'),

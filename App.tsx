@@ -39,7 +39,7 @@ import {
   persistDiagramToStorage,
   persistLayoutToStorage
 } from './lib/diagramIO';
-import { downloadPdfExport, downloadPngExport } from './lib/exportAssets';
+import { downloadPdfExport, downloadPngExport, downloadSvgExport } from './lib/exportAssets';
 
 const STORAGE_KEY = 'finflow-builder.diagram.v1';
 const LAYOUT_STORAGE_KEY = 'finflow-builder.layout.v1';
@@ -1302,6 +1302,25 @@ const App: React.FC = () => {
     }
   }, [isDarkMode, nodes, pushToast]);
 
+  const handleExportSvg = useCallback(async () => {
+    if (!exportLayerRef.current) {
+      pushToast('SVG export failed: canvas layer is not ready.', 'error');
+      return;
+    }
+
+    try {
+      await downloadSvgExport({
+        worldElement: exportLayerRef.current,
+        nodes,
+        isDarkMode
+      });
+      pushToast('SVG exported successfully.', 'success');
+    } catch (error) {
+      console.error('SVG export failed:', error);
+      pushToast('SVG export failed. Try again.', 'error');
+    }
+  }, [isDarkMode, nodes, pushToast]);
+
   const handleExportPdf = useCallback(async () => {
     if (!exportLayerRef.current) {
       pushToast('PDF export failed: canvas layer is not ready.', 'error');
@@ -1751,6 +1770,7 @@ const App: React.FC = () => {
         onResetCanvas={handleResetCanvas}
         onImportDiagram={() => importInputRef.current?.click()}
         onExportDiagram={handleExportDiagram}
+        onExportSvg={handleExportSvg}
         onExportPng={handleExportPng}
         onExportPdf={handleExportPdf}
         centerSlot={
@@ -2054,6 +2074,7 @@ const App: React.FC = () => {
               onResetCanvas={handleResetCanvas}
               onImportDiagram={() => importInputRef.current?.click()}
               onExportDiagram={handleExportDiagram}
+              onExportSvg={handleExportSvg}
               onExportPng={handleExportPng}
               onExportPdf={handleExportPdf}
               activeTabRequest={inspectorTabRequest}

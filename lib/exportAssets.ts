@@ -1,5 +1,5 @@
 import { jsPDF } from 'jspdf';
-import { toPng } from 'html-to-image';
+import { toPng, toSvg } from 'html-to-image';
 import { EntityType, Node, NodeShape } from '../types';
 
 const EXPORT_PADDING = 120;
@@ -107,6 +107,33 @@ export const exportDiagramToPngDataUrl = async ({
   });
 };
 
+export const exportDiagramToSvgDataUrl = async ({
+  worldElement,
+  nodes,
+  isDarkMode,
+  includeBackground = true
+}: ExportImageOptions): Promise<string> => {
+  const viewport = buildExportViewportStyle(nodes);
+
+  return toSvg(worldElement, {
+    cacheBust: true,
+    backgroundColor: includeBackground ? (isDarkMode ? '#0b1220' : '#f8fafc') : 'transparent',
+    width: viewport.width,
+    height: viewport.height,
+    filter: (node) => {
+      if (!(node instanceof HTMLElement)) return true;
+      if (node.dataset.exportIgnore === 'true') return false;
+      return true;
+    },
+    style: {
+      width: `${viewport.width}px`,
+      height: `${viewport.height}px`,
+      transform: viewport.transform,
+      transformOrigin: '0 0'
+    }
+  });
+};
+
 const downloadDataUrl = (dataUrl: string, filename: string) => {
   const anchor = document.createElement('a');
   anchor.href = dataUrl;
@@ -138,4 +165,12 @@ export const downloadPdfExport = async (
 
   pdf.addImage(dataUrl, 'PNG', 0, 0, image.width, image.height);
   pdf.save(filename);
+};
+
+export const downloadSvgExport = async (
+  options: ExportImageOptions,
+  filename = `finflow-diagram-${Date.now()}.svg`
+) => {
+  const dataUrl = await exportDiagramToSvgDataUrl(options);
+  downloadDataUrl(dataUrl, filename);
 };
