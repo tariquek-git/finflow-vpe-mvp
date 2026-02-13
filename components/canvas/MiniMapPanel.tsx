@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Node, ViewportTransform } from '../../types';
 import { getNodeDimensions } from './canvasGeometry';
 
@@ -51,11 +51,17 @@ const getBounds = (nodes: Node[]): Bounds => {
 };
 
 const MiniMapPanel: React.FC<MiniMapPanelProps> = ({ nodes, viewport, canvasSize, isDarkMode, onViewportChange }) => {
+  const [isDraggingViewport, setIsDraggingViewport] = useState(false);
   const bounds = useMemo(() => getBounds(nodes), [nodes]);
 
   const worldToMini = (x: number, y: number) => ({
     x: ((x - bounds.minX) / bounds.width) * MINIMAP_WIDTH,
     y: ((y - bounds.minY) / bounds.height) * MINIMAP_HEIGHT
+  });
+
+  const miniToWorld = (x: number, y: number) => ({
+    x: bounds.minX + (x / MINIMAP_WIDTH) * bounds.width,
+    y: bounds.minY + (y / MINIMAP_HEIGHT) * bounds.height
   });
 
   const viewportWorld = {
@@ -78,34 +84,41 @@ const MiniMapPanel: React.FC<MiniMapPanelProps> = ({ nodes, viewport, canvasSize
     height: Math.max(12, miniBottomRight.y - miniTopLeft.y)
   };
 
-  const handleMiniMapPointer = (event: React.MouseEvent<HTMLDivElement>) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
+  const panToMiniPoint = (clientX: number, clientY: number, target: HTMLDivElement) => {
+    const rect = target.getBoundingClientRect();
+    const x = Math.max(0, Math.min(MINIMAP_WIDTH, clientX - rect.left));
+    const y = Math.max(0, Math.min(MINIMAP_HEIGHT, clientY - rect.top));
 
-    const worldX = bounds.minX + (x / MINIMAP_WIDTH) * bounds.width;
-    const worldY = bounds.minY + (y / MINIMAP_HEIGHT) * bounds.height;
+    const world = miniToWorld(x, y);
 
     onViewportChange({
       ...viewport,
-      x: canvasSize.width / 2 - worldX * viewport.zoom,
-      y: canvasSize.height / 2 - worldY * viewport.zoom
+      x: canvasSize.width / 2 - world.x * viewport.zoom,
+      y: canvasSize.height / 2 - world.y * viewport.zoom
     });
   };
 
   return (
     <div
       data-testid="canvas-minimap"
-      className={`pointer-events-auto absolute bottom-3 right-3 z-30 rounded-xl border p-2 shadow-sm ${
-        isDarkMode
-          ? 'border-slate-700 bg-slate-900/92'
-          : 'border-slate-300 bg-white/95'
+      className={`pointer-events-auto absolute bottom-3 right-3 z-30 rounded-2xl border p-2 shadow-md ${
+        isDarkMode ? 'border-slate-700 bg-slate-900/92' : 'border-slate-200 bg-white/92'
       }`}
     >
       <div
         role="button"
         tabIndex={0}
-        onClick={handleMiniMapPointer}
+        onClick={(event) => panToMiniPoint(event.clientX, event.clientY, event.currentTarget)}
+        onMouseDown={(event) => {
+          setIsDraggingViewport(true);
+          panToMiniPoint(event.clientX, event.clientY, event.currentTarget);
+        }}
+        onMouseMove={(event) => {
+          if (!isDraggingViewport) return;
+          panToMiniPoint(event.clientX, event.clientY, event.currentTarget);
+        }}
+        onMouseUp={() => setIsDraggingViewport(false)}
+        onMouseLeave={() => setIsDraggingViewport(false)}
         onKeyDown={(event) => {
           if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault();
@@ -118,8 +131,14 @@ const MiniMapPanel: React.FC<MiniMapPanelProps> = ({ nodes, viewport, canvasSize
             });
           }
         }}
-        className={`relative cursor-pointer overflow-hidden rounded-lg border ${
-          isDarkMode ? 'border-slate-700 bg-slate-950' : 'border-slate-200 bg-slate-50'
+        className={`relative cursor-pointer overflow-hidden rounded-xl border ${
+          isDraggingViewport
+            ? isDarkMode
+              ? 'border-cyan-400/60 bg-slate-950'
+              : 'border-cyan-500/60 bg-slate-50'
+            : isDarkMode
+              ? 'border-slate-700 bg-slate-950'
+              : 'border-slate-200 bg-slate-50'
         }`}
         style={{ width: MINIMAP_WIDTH, height: MINIMAP_HEIGHT }}
       >
@@ -137,7 +156,7 @@ const MiniMapPanel: React.FC<MiniMapPanelProps> = ({ nodes, viewport, canvasSize
                 width={Math.max(3, bottomRight.x - topLeft.x)}
                 height={Math.max(3, bottomRight.y - topLeft.y)}
                 rx={2}
-                fill={isDarkMode ? '#64748b' : '#94a3b8'}
+                fill={isDarkMode ? '#76879f' : '#94a3b8'}
                 opacity={0.9}
               />
             );
@@ -147,8 +166,8 @@ const MiniMapPanel: React.FC<MiniMapPanelProps> = ({ nodes, viewport, canvasSize
             y={viewportRect.y}
             width={viewportRect.width}
             height={viewportRect.height}
-            fill="rgba(37, 99, 235, 0.14)"
-            stroke="rgba(37, 99, 235, 0.9)"
+            fill="rgba(8, 145, 178, 0.13)"
+            stroke="rgba(8, 145, 178, 0.9)"
             strokeWidth="1"
             rx={3}
           />

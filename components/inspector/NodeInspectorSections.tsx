@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { UseFormRegister, UseFormSetValue } from 'react-hook-form';
-import { ChevronDown, ChevronRight, ShieldCheck, Sparkles } from 'lucide-react';
+import { ChevronDown, ChevronRight, Landmark, ShieldCheck, Sparkles, Tags } from 'lucide-react';
 import { AccountType, EntityType } from '../../types';
 import type { NodeMetaFields } from '../../lib/nodeMeta';
 
@@ -23,35 +23,29 @@ type NodeInspectorSectionsProps = {
 };
 
 const PRESET_COLORS = [
-  { hex: '#020617', label: 'Dark' },
-  { hex: '#ffffff', label: 'Light' },
-  { hex: '#ef4444', label: 'Danger' },
-  { hex: '#10b981', label: 'Success' },
-  { hex: '#6366f1', label: 'Indigo' }
+  { hex: '#0f172a', label: 'Slate' },
+  { hex: '#ffffff', label: 'White' },
+  { hex: '#0e7490', label: 'Cyan' },
+  { hex: '#ef4444', label: 'Red' },
+  { hex: '#10b981', label: 'Green' }
 ];
 
+const mergeClasses = (...classNames: Array<string | undefined>) => classNames.filter(Boolean).join(' ');
+
 const Field: React.FC<{ label: string; helper?: string; children?: React.ReactNode }> = ({ label, helper, children }) => (
-  <div className="flex flex-col gap-1">
-    <label className="ml-0.5 text-[10px] font-semibold uppercase tracking-[0.09em] text-slate-500 dark:text-slate-400">
-      {label}
-    </label>
+  <div className="inspector-field">
+    <label className="inspector-label">{label}</label>
     {children}
-    {helper ? <span className="ml-0.5 text-[10px] text-slate-500 dark:text-slate-400">{helper}</span> : null}
+    {helper ? <span className="inspector-helper">{helper}</span> : null}
   </div>
 );
 
-const Input: React.FC<React.InputHTMLAttributes<HTMLInputElement>> = (props) => (
-  <input
-    {...props}
-    className="ui-input h-9 w-full px-3 text-xs font-medium outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
-  />
+const Input: React.FC<React.InputHTMLAttributes<HTMLInputElement>> = ({ className, ...props }) => (
+  <input {...props} className={mergeClasses('ui-input inspector-input', className)} />
 );
 
-const Select: React.FC<React.SelectHTMLAttributes<HTMLSelectElement>> = (props) => (
-  <select
-    {...props}
-    className="ui-input h-9 w-full cursor-pointer appearance-none px-3 text-xs font-medium outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
-  >
+const Select: React.FC<React.SelectHTMLAttributes<HTMLSelectElement>> = ({ className, ...props }) => (
+  <select {...props} className={mergeClasses('ui-input inspector-input inspector-select', className)}>
     {props.children}
   </select>
 );
@@ -61,12 +55,12 @@ const PanelSection: React.FC<{ title: string; icon: React.ReactNode; children?: 
   icon,
   children
 }) => (
-  <section className="mb-3 rounded-xl border border-slate-200 bg-white p-2.5 dark:border-slate-700 dark:bg-slate-900">
-    <div className="mb-2 flex items-center gap-2 border-b border-slate-200 px-1 pb-1 dark:border-slate-700">
-      <div className="text-blue-600 dark:text-blue-300">{icon}</div>
+  <section className="inspector-section">
+    <div className="inspector-section-head">
+      <div className="text-cyan-600 dark:text-cyan-300">{icon}</div>
       <h3 className="ui-section-title">{title}</h3>
     </div>
-    <div className="space-y-2.5 px-1">{children}</div>
+    <div className="inspector-body">{children}</div>
   </section>
 );
 
@@ -78,21 +72,29 @@ const CollapsibleSection: React.FC<{
   children?: React.ReactNode;
   testId?: string;
 }> = ({ title, icon, isOpen, onToggle, children, testId }) => (
-  <section className="mb-3 rounded-xl border border-slate-200 bg-white p-2.5 dark:border-slate-700 dark:bg-slate-900">
+  <section className="inspector-section">
     <button
       type="button"
       onClick={onToggle}
       data-testid={testId}
       aria-expanded={isOpen}
-      className="flex w-full items-center justify-between gap-2 border-b border-slate-200 px-1 pb-1 dark:border-slate-700"
+      className="inspector-toggle inspector-section-head"
     >
       <span className="flex items-center gap-2">
-        <span className="text-blue-600 dark:text-blue-300">{icon}</span>
+        <span className="text-cyan-600 dark:text-cyan-300">{icon}</span>
         <span className="ui-section-title">{title}</span>
       </span>
       {isOpen ? <ChevronDown className="h-4 w-4 text-slate-400" /> : <ChevronRight className="h-4 w-4 text-slate-400" />}
     </button>
-    {isOpen ? <div className="space-y-2.5 px-1 pt-2.5">{children}</div> : null}
+    <div
+      className={`grid transition-[grid-template-rows,opacity] duration-200 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${
+        isOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+      }`}
+    >
+      <div className="overflow-hidden">
+        <div className="inspector-body pt-2.5">{children}</div>
+      </div>
+    </div>
   </section>
 );
 
@@ -105,6 +107,9 @@ const NodeInspectorSections: React.FC<NodeInspectorSectionsProps> = ({
   nodeMeta,
   onNodeMetaChange
 }) => {
+  const [complianceOpen, setComplianceOpen] = useState(true);
+  const [metadataOpen, setMetadataOpen] = useState(true);
+
   return (
     <>
       <PanelSection title="Identity" icon={<Sparkles className="h-3.5 w-3.5" />}>
@@ -123,7 +128,7 @@ const NodeInspectorSections: React.FC<NodeInspectorSectionsProps> = ({
         <Field label="Description">
           <textarea
             {...register('description')}
-            className="ui-input h-24 w-full resize-none p-3 text-xs outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+            className="ui-input inspector-textarea"
             placeholder="Operational context and workflow notes..."
           />
         </Field>
@@ -131,7 +136,7 @@ const NodeInspectorSections: React.FC<NodeInspectorSectionsProps> = ({
 
       <CollapsibleSection
         title="Financial Attributes"
-        icon={<ShieldCheck className="h-3.5 w-3.5" />}
+        icon={<Landmark className="h-3.5 w-3.5" />}
         isOpen={nodeDetailsOpen}
         onToggle={onToggleNodeDetails}
         testId="inspector-toggle-node-details"
@@ -197,8 +202,8 @@ const NodeInspectorSections: React.FC<NodeInspectorSectionsProps> = ({
                   })
                 }
                 title={color.label}
-                className={`h-6 w-6 rounded-full border-2 transition-transform hover:scale-110 ${
-                  selectedNodeColor === color.hex ? 'scale-110 border-blue-500 shadow-lg' : 'border-transparent'
+                className={`h-6 w-6 rounded-full border-2 transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/40 ${
+                  selectedNodeColor === color.hex ? 'scale-110 border-cyan-500 shadow-lg' : 'border-transparent'
                 }`}
                 style={{ backgroundColor: color.hex }}
               />
@@ -210,10 +215,8 @@ const NodeInspectorSections: React.FC<NodeInspectorSectionsProps> = ({
       <CollapsibleSection
         title="Compliance"
         icon={<ShieldCheck className="h-3.5 w-3.5" />}
-        isOpen={true}
-        onToggle={() => {
-          // intentionally static-open for current UX pass
-        }}
+        isOpen={complianceOpen}
+        onToggle={() => setComplianceOpen((prev) => !prev)}
       >
         <div className="grid grid-cols-1 gap-2">
           <Field label="KYC Owner">
@@ -242,11 +245,9 @@ const NodeInspectorSections: React.FC<NodeInspectorSectionsProps> = ({
 
       <CollapsibleSection
         title="Metadata"
-        icon={<ShieldCheck className="h-3.5 w-3.5" />}
-        isOpen={true}
-        onToggle={() => {
-          // intentionally static-open for current UX pass
-        }}
+        icon={<Tags className="h-3.5 w-3.5" />}
+        isOpen={metadataOpen}
+        onToggle={() => setMetadataOpen((prev) => !prev)}
       >
         <Field label="Tags">
           <Input

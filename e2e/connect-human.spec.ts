@@ -162,6 +162,9 @@ test('edge style controls remain enabled for selected edge', async ({ page }) =>
   await clickNodeBody(page, 'starter-network');
 
   const dashedButton = page.locator('button[title="dashed line style"]');
+  await expect(dashedButton).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Select tool' }).click();
   await expect(dashedButton).toBeEnabled();
 
   await dashedButton.click();

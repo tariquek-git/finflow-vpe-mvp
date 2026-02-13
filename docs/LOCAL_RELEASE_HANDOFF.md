@@ -1,15 +1,15 @@
-# Local Release Handoff (v0.2.3)
+# Local Release Handoff (v0.2.4)
 
 ## Release Identity
-- Release branch of record: `codex/v0.2.3-svg-export`
+- Release branch of record: `main`
 - Local remote source of truth: `/Users/tarique/Documents/banking-diagram-mvp-origin.git`
-- Release tag of record: `v0.2.3`
-- Release type: Local patch release for SVG export workflow
+- Release tag of record: `v0.2.4`
+- Release type: Local patch release for UI/UX de-clutter and interaction clarity hardening
 
-## Isolation Notes
-- Baseline `main` was reset to `v0.2.2` before patch validation.
-- SVG scope shipped from `codex/v0.2.3-svg-export` only.
-- Separate non-release work preserved on `codex/wip-flowcanvas-perf`.
+## Scope Notes
+- Kept schema and import/export payload contracts unchanged (`nodes`, `edges`, `drawings`, `layout`).
+- Removed duplicate `Delete/Duplicate` controls from bottom dock to avoid selector/runtime collisions.
+- Preserved contextual edit actions in selection tray/overflow only.
 
 ## Gate Evidence
 All commands passed with exit code `0`:
@@ -22,17 +22,18 @@ All commands passed with exit code `0`:
 ## QA Snapshot
 - Connect-human suite: pass (7/7)
 - Smoke suite: pass (7/7)
-- Acceptance suite: pass (10/10)
+- Acceptance suite: pass (13/13)
 - Accessibility suite: pass (3/3)
+- Human pilot script: pass (`qa-artifacts/2026-02-13T22-55-29-913Z`)
 
 ## Deliverables
-- `/Users/tarique/Downloads/banking-diagram-mvp_v0.2.3_handoff_20260213-140430.tar.gz`
-- `/Users/tarique/Downloads/banking-diagram-mvp_v0.2.3_handoff_20260213-140430.zip`
+- `/Users/tarique/Downloads/banking-diagram-mvp_v0.2.4_handoff_20260213-175637.tar.gz`
+- `/Users/tarique/Downloads/banking-diagram-mvp_v0.2.4_handoff_20260213-175637.zip`
 
 ## Public Contract Safety
 - No changes to schema or payload contracts (`nodes`, `edges`, `drawings`, `layout`).
 - No import/export JSON compatibility changes.
 
 ## Notes
-- Export menu now includes SVG along with JSON/PNG/PDF.
 - Existing QA-critical labels/test IDs remain preserved.
+- `Delete selected item` remains contextual and appears only when a selection exists.

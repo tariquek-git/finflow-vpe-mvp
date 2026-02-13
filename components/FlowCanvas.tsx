@@ -52,6 +52,13 @@ interface FlowCanvasProps {
 const AUTOSCROLL_EDGE_THRESHOLD = 40;
 const AUTOSCROLL_MAX_SPEED = 16;
 
+type LodState = {
+  compactNodes: boolean;
+  showNodeMeta: boolean;
+  showNodeFooter: boolean;
+  showEdgeLabels: boolean;
+};
+
 type PendingConnection = { nodeId: string; portIdx: number };
 type PendingConnectionResolution = {
   nextPending: PendingConnection | null;
@@ -151,13 +158,44 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const [pointerWorld, setPointerWorld] = useState<Position | null>(null);
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
+  const [lodState, setLodState] = useState<LodState>(() => ({
+    compactNodes: viewport.zoom < 0.35,
+    showNodeMeta: viewport.zoom >= 0.6,
+    showNodeFooter: viewport.zoom >= 0.45,
+    showEdgeLabels: viewport.zoom >= 0.45
+  }));
 
   const containerRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef(viewport);
+  const pointerMoveRafRef = useRef<number | null>(null);
+  const pendingPointerRef = useRef<{ clientX: number; clientY: number; altKey: boolean } | null>(null);
 
   useEffect(() => {
     viewportRef.current = viewport;
   }, [viewport]);
+
+  useEffect(() => {
+    const zoom = viewport.zoom;
+    setLodState((prev) => {
+      const next: LodState = {
+        compactNodes: prev.compactNodes ? zoom < 0.39 : zoom < 0.35,
+        showNodeMeta: prev.showNodeMeta ? zoom >= 0.6 : zoom >= 0.64,
+        showNodeFooter: prev.showNodeFooter ? zoom >= 0.45 : zoom >= 0.49,
+        showEdgeLabels: prev.showEdgeLabels ? zoom >= 0.45 : zoom >= 0.49
+      };
+
+      if (
+        next.compactNodes === prev.compactNodes &&
+        next.showNodeMeta === prev.showNodeMeta &&
+        next.showNodeFooter === prev.showNodeFooter &&
+        next.showEdgeLabels === prev.showEdgeLabels
+      ) {
+        return prev;
+      }
+
+      return next;
+    });
+  }, [viewport.zoom]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -364,13 +402,46 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
 
     const worldPos = screenToWorld(event.clientX, event.clientY);
 
+    const clickedNode = presentableNodes.find((candidate) => {
+      const { width, height } = getNodeDimensions(candidate);
+      return (
+        worldPos.x >= candidate.position.x &&
+        worldPos.x <= candidate.position.x + width &&
+        worldPos.y >= candidate.position.y &&
+        worldPos.y <= candidate.position.y + height
+      );
+    });
+
     if (activeTool === 'text') {
       onAddNode(EntityType.TEXT_BOX, { x: worldPos.x - 90, y: worldPos.y - 30 });
       return;
     }
 
-    if (activeTool === 'draw' && pendingConnection) {
-      setPendingConnection(null);
+    if (activeTool === 'draw') {
+      if (clickedNode) {
+        const resolution = resolvePendingConnectionFromNodeClick(
+          nodes,
+          pendingConnection,
+          clickedNode.id,
+          worldPos
+        );
+
+        if (resolution.edgeToCreate) {
+          onConnect(
+            resolution.edgeToCreate.sourceId,
+            resolution.edgeToCreate.targetId,
+            resolution.edgeToCreate.sourcePortIdx,
+            resolution.edgeToCreate.targetPortIdx
+          );
+        }
+
+        setPendingConnection(resolution.nextPending);
+        return;
+      }
+
+      if (pendingConnection) {
+        setPendingConnection(null);
+      }
       return;
     }
 
@@ -397,94 +468,134 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
     onSelectEdge(null);
   };
 
-  const handleMouseMove = (event: React.MouseEvent) => {
-    const worldPos = screenToWorld(event.clientX, event.clientY);
-    setPointerWorld(worldPos);
-    onPointerWorldChange?.(worldPos);
+  const processMouseMove = useCallback(
+    (clientX: number, clientY: number, altKey: boolean) => {
+      const worldPos = screenToWorld(clientX, clientY);
+      setPointerWorld(worldPos);
+      onPointerWorldChange?.(worldPos);
 
-    if (panningState) {
-      const deltaX = event.clientX - panningState.startX;
-      const deltaY = event.clientY - panningState.startY;
-      onViewportChange({
-        ...viewportRef.current,
-        x: panningState.baseX + deltaX,
-        y: panningState.baseY + deltaY
-      });
-      return;
-    }
-
-    if (selectionMarquee) {
-      const nextMarquee = {
-        ...selectionMarquee,
-        current: worldPos
-      };
-      setSelectionMarquee(nextMarquee);
-
-      autoScrollCanvasIfNeeded(event.clientX, event.clientY);
-
-      const minX = Math.min(nextMarquee.start.x, nextMarquee.current.x);
-      const minY = Math.min(nextMarquee.start.y, nextMarquee.current.y);
-      const maxX = Math.max(nextMarquee.start.x, nextMarquee.current.x);
-      const maxY = Math.max(nextMarquee.start.y, nextMarquee.current.y);
-
-      const marqueeSelected = presentableNodes
-        .filter((node) => {
-          const { width, height } = getNodeDimensions(node);
-          const nodeMinX = node.position.x;
-          const nodeMaxX = node.position.x + width;
-          const nodeMinY = node.position.y;
-          const nodeMaxY = node.position.y + height;
-          return nodeMaxX >= minX && nodeMinX <= maxX && nodeMaxY >= minY && nodeMinY <= maxY;
-        })
-        .map((node) => node.id);
-
-      onSelectNodes(Array.from(new Set([...nextMarquee.baseSelection, ...marqueeSelected])));
-      return;
-    }
-
-    if (!draggingNodes) {
-      setSnapGuide({ x: null, y: null });
-      return;
-    }
-
-    if (!hasRecordedDragHistory) {
-      onBeginNodeMove(draggingNodes.ids);
-      setHasRecordedDragHistory(true);
-    }
-
-    autoScrollCanvasIfNeeded(event.clientX, event.clientY);
-
-    const deltaX = worldPos.x - draggingNodes.pointerStart.x;
-    const deltaY = worldPos.y - draggingNodes.pointerStart.y;
-
-    let appliedDeltaX = deltaX;
-    let appliedDeltaY = deltaY;
-
-    if (snapToGrid && !event.altKey && draggingNodes.ids.length > 0) {
-      const primaryId = draggingNodes.ids[0];
-      const primaryInitial = draggingNodes.initialPositions[primaryId];
-      if (primaryInitial) {
-        const snappedPrimaryX = Math.round((primaryInitial.x + deltaX) / GRID_SIZE) * GRID_SIZE;
-        const snappedPrimaryY = Math.round((primaryInitial.y + deltaY) / GRID_SIZE) * GRID_SIZE;
-        appliedDeltaX = snappedPrimaryX - primaryInitial.x;
-        appliedDeltaY = snappedPrimaryY - primaryInitial.y;
-        setSnapGuide({ x: snappedPrimaryX, y: snappedPrimaryY });
+      if (panningState) {
+        const deltaX = clientX - panningState.startX;
+        const deltaY = clientY - panningState.startY;
+        onViewportChange({
+          ...viewportRef.current,
+          x: panningState.baseX + deltaX,
+          y: panningState.baseY + deltaY
+        });
+        return;
       }
-    } else {
-      setSnapGuide({ x: null, y: null });
-    }
 
-    for (const id of draggingNodes.ids) {
-      const initial = draggingNodes.initialPositions[id];
-      if (!initial) continue;
-      onUpdateNodePosition(id, {
-        x: initial.x + appliedDeltaX,
-        y: initial.y + appliedDeltaY
-      });
-    }
+      if (selectionMarquee) {
+        const nextMarquee = {
+          ...selectionMarquee,
+          current: worldPos
+        };
+        setSelectionMarquee(nextMarquee);
+
+        autoScrollCanvasIfNeeded(clientX, clientY);
+
+        const minX = Math.min(nextMarquee.start.x, nextMarquee.current.x);
+        const minY = Math.min(nextMarquee.start.y, nextMarquee.current.y);
+        const maxX = Math.max(nextMarquee.start.x, nextMarquee.current.x);
+        const maxY = Math.max(nextMarquee.start.y, nextMarquee.current.y);
+
+        const marqueeSelected = presentableNodes
+          .filter((node) => {
+            const { width, height } = getNodeDimensions(node);
+            const nodeMinX = node.position.x;
+            const nodeMaxX = node.position.x + width;
+            const nodeMinY = node.position.y;
+            const nodeMaxY = node.position.y + height;
+            return nodeMaxX >= minX && nodeMinX <= maxX && nodeMaxY >= minY && nodeMinY <= maxY;
+          })
+          .map((node) => node.id);
+
+        onSelectNodes(Array.from(new Set([...nextMarquee.baseSelection, ...marqueeSelected])));
+        return;
+      }
+
+      if (!draggingNodes) {
+        setSnapGuide({ x: null, y: null });
+        return;
+      }
+
+      if (!hasRecordedDragHistory) {
+        onBeginNodeMove(draggingNodes.ids);
+        setHasRecordedDragHistory(true);
+      }
+
+      autoScrollCanvasIfNeeded(clientX, clientY);
+
+      const deltaX = worldPos.x - draggingNodes.pointerStart.x;
+      const deltaY = worldPos.y - draggingNodes.pointerStart.y;
+
+      let appliedDeltaX = deltaX;
+      let appliedDeltaY = deltaY;
+
+      if (snapToGrid && !altKey && draggingNodes.ids.length > 0) {
+        const primaryId = draggingNodes.ids[0];
+        const primaryInitial = draggingNodes.initialPositions[primaryId];
+        if (primaryInitial) {
+          const snappedPrimaryX = Math.round((primaryInitial.x + deltaX) / GRID_SIZE) * GRID_SIZE;
+          const snappedPrimaryY = Math.round((primaryInitial.y + deltaY) / GRID_SIZE) * GRID_SIZE;
+          appliedDeltaX = snappedPrimaryX - primaryInitial.x;
+          appliedDeltaY = snappedPrimaryY - primaryInitial.y;
+          setSnapGuide({ x: snappedPrimaryX, y: snappedPrimaryY });
+        }
+      } else {
+        setSnapGuide({ x: null, y: null });
+      }
+
+      for (const id of draggingNodes.ids) {
+        const initial = draggingNodes.initialPositions[id];
+        if (!initial) continue;
+        onUpdateNodePosition(id, {
+          x: initial.x + appliedDeltaX,
+          y: initial.y + appliedDeltaY
+        });
+      }
+    },
+    [
+      autoScrollCanvasIfNeeded,
+      draggingNodes,
+      hasRecordedDragHistory,
+      onBeginNodeMove,
+      onPointerWorldChange,
+      onSelectNodes,
+      onUpdateNodePosition,
+      onViewportChange,
+      panningState,
+      presentableNodes,
+      screenToWorld,
+      selectionMarquee,
+      snapToGrid
+    ]
+  );
+
+  const handleMouseMove = (event: React.MouseEvent) => {
+    pendingPointerRef.current = {
+      clientX: event.clientX,
+      clientY: event.clientY,
+      altKey: event.altKey
+    };
+
+    if (pointerMoveRafRef.current !== null) return;
+
+    pointerMoveRafRef.current = window.requestAnimationFrame(() => {
+      pointerMoveRafRef.current = null;
+      const pending = pendingPointerRef.current;
+      if (!pending) return;
+      processMouseMove(pending.clientX, pending.clientY, pending.altKey);
+    });
   };
 
   const handleMouseUp = () => {
+    if (pointerMoveRafRef.current !== null) {
+      window.cancelAnimationFrame(pointerMoveRafRef.current);
+      pointerMoveRafRef.current = null;
+    }
+    pendingPointerRef.current = null;
+
     if (draggingNodes && showSwimlanes) {
       for (const id of draggingNodes.ids) {
         const node = nodeById.get(id);
@@ -581,6 +692,14 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
     };
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (pointerMoveRafRef.current !== null) {
+        window.cancelAnimationFrame(pointerMoveRafRef.current);
+      }
+    };
+  }, []);
+
   const handleWheel = (event: React.WheelEvent) => {
     if (event.ctrlKey || event.metaKey) {
       event.preventDefault();
@@ -630,8 +749,8 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
       }`}
       style={{
         background: isDarkMode
-          ? 'radial-gradient(1200px circle at 16% 0%, #283142 0%, #1e252f 45%, #171c24 100%)'
-          : 'radial-gradient(900px circle at 14% 0%, #ffffff 0%, #f7f9fd 42%, #eef2f7 100%)'
+          ? 'radial-gradient(1200px circle at 14% 0%, #1e2b42 0%, #152033 44%, #0f1727 100%)'
+          : 'radial-gradient(1000px circle at 12% 0%, #ffffff 0%, #f7fbff 44%, #edf3f9 100%)'
       }}
       onMouseDown={handleCanvasMouseDown}
       onMouseMove={handleMouseMove}
@@ -731,7 +850,7 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
                 isSelected={selectedEdgeId === edge.id}
                 isDimmed={selectedNodeIds.length > 0 && !selectedConnectedEdgeIds.has(edge.id)}
                 isDarkMode={isDarkMode}
-                zoom={viewport.zoom}
+                showLabelAtZoom={lodState.showEdgeLabels}
                 onSelect={(id) => {
                   onSelectEdge(id);
                   onOpenInspector();
@@ -777,7 +896,9 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
           <DiagramNodeCard
             key={node.id}
             node={node}
-            zoom={viewport.zoom}
+            compactMode={lodState.compactNodes}
+            showBodyMeta={lodState.showNodeMeta}
+            showFooter={lodState.showNodeFooter}
             isSelected={selectedNodeIds.includes(node.id)}
             isDarkMode={isDarkMode}
             showPorts={showPorts && activeTool === 'draw'}
@@ -793,6 +914,10 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
             onMouseDown={(event, id) => {
               if (event.button !== 0 || isSpacePressed) return;
               event.stopPropagation();
+              if (activeTool === 'draw') {
+                handleNodeConnectClick(event, id);
+                return;
+              }
               if (activeTool !== 'select') return;
 
               if (event.shiftKey) {
@@ -828,6 +953,7 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
             }}
             onClick={(event, id) => {
               event.stopPropagation();
+              if (activeTool === 'draw') return;
               handleNodeConnectClick(event, id);
             }}
             onPortClick={(event, id, portIdx) => {

@@ -26,9 +26,9 @@ const PanelSection: React.FC<{ title: string; icon: React.ReactNode; children?: 
   icon,
   children
 }) => (
-  <section className="mb-3 rounded-xl border border-slate-200 bg-white p-2.5 dark:border-slate-700 dark:bg-slate-900">
+  <section className="mb-3 rounded-xl border border-slate-200 bg-white p-2.5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
     <div className="mb-2 flex items-center gap-2 border-b border-slate-200 px-1 pb-1 dark:border-slate-700">
-      <div className="text-blue-600 dark:text-blue-300">{icon}</div>
+      <div className="text-cyan-600 dark:text-cyan-300">{icon}</div>
       <h3 className="ui-section-title">{title}</h3>
     </div>
     <div className="space-y-2.5 px-1">{children}</div>
@@ -68,42 +68,21 @@ const CanvasInspectorSections: React.FC<CanvasInspectorSectionsProps> = ({
     <>
       <PanelSection title="Canvas Utilities" icon={<Settings2 className="h-3.5 w-3.5" />}>
         <p className="text-[10px] text-slate-500 dark:text-slate-400">
-          Primary canvas controls live here to keep the toolbar and canvas uncluttered.
+          Primary toggles are now in the top bar and left rail. This panel keeps full-detail controls.
         </p>
+
         <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={onToggleSnapToGrid}
-            aria-pressed={snapToGrid}
-            className={`rounded-md border px-3 py-2 text-[10px] font-semibold uppercase transition-all ${
-              snapToGrid
-                ? 'border-blue-600 bg-blue-600 text-white'
-                : 'border-slate-300 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
-            }`}
-          >
+          <button type="button" onClick={onToggleSnapToGrid} aria-pressed={snapToGrid} className={`status-chip ${snapToGrid ? 'is-active' : ''}`}>
             {snapToGrid ? 'Snap On' : 'Snap Off'}
           </button>
-          <button
-            type="button"
-            onClick={onTogglePorts}
-            aria-pressed={showPorts}
-            className={`rounded-md border px-3 py-2 text-[10px] font-semibold uppercase transition-all ${
-              showPorts
-                ? 'border-blue-600 bg-blue-600 text-white'
-                : 'border-slate-300 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
-            }`}
-          >
+          <button type="button" onClick={onTogglePorts} aria-pressed={showPorts} className={`status-chip ${showPorts ? 'is-active' : ''}`}>
             {showPorts ? 'Ports On' : 'Ports Off'}
           </button>
           <button
             type="button"
             onClick={onToggleMinimap}
             aria-pressed={showMinimap}
-            className={`col-span-2 inline-flex items-center justify-center gap-1 rounded-md border px-3 py-2 text-[10px] font-semibold uppercase transition-all ${
-              showMinimap
-                ? 'border-blue-600 bg-blue-600 text-white'
-                : 'border-slate-300 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
-            }`}
+            className={`status-chip col-span-2 inline-flex items-center justify-center gap-1 ${showMinimap ? 'is-active' : ''}`}
           >
             <Map className="h-3.5 w-3.5" /> {showMinimap ? 'Minimap On' : 'Minimap Off'}
           </button>
@@ -117,11 +96,7 @@ const CanvasInspectorSections: React.FC<CanvasInspectorSectionsProps> = ({
                 type="button"
                 onClick={() => onSetGridMode(mode)}
                 aria-pressed={gridMode === mode}
-                className={`rounded-md border px-2 py-1.5 text-[10px] font-semibold uppercase ${
-                  gridMode === mode
-                    ? 'border-blue-600 bg-blue-600 text-white'
-                    : 'border-slate-300 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
-                }`}
+                className={`status-chip ${gridMode === mode ? 'is-active' : ''}`}
               >
                 {mode}
               </button>
@@ -149,11 +124,7 @@ const CanvasInspectorSections: React.FC<CanvasInspectorSectionsProps> = ({
           type="button"
           onClick={onToggleSwimlanes}
           aria-pressed={showSwimlanes}
-          className={`mb-2 rounded-md border px-3 py-2 text-[10px] font-semibold uppercase ${
-            showSwimlanes
-              ? 'border-blue-600 bg-blue-600 text-white'
-              : 'border-slate-300 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
-          }`}
+          className={`status-chip ${showSwimlanes ? 'is-active' : ''}`}
         >
           {showSwimlanes ? 'Swimlanes: On' : 'Swimlanes: Off'}
         </button>
@@ -163,7 +134,7 @@ const CanvasInspectorSections: React.FC<CanvasInspectorSectionsProps> = ({
             <button
               type="button"
               onClick={() => setSwimlaneListOpen((prev) => !prev)}
-              className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1.5 text-[10px] font-semibold uppercase dark:border-slate-700"
+              className="status-chip"
             >
               {swimlaneListOpen ? 'Hide Lane Labels' : `Lane Labels (${swimlaneLabels.length})`}
             </button>
@@ -191,11 +162,7 @@ const CanvasInspectorSections: React.FC<CanvasInspectorSectionsProps> = ({
               </div>
             ) : null}
 
-            <button
-              type="button"
-              onClick={onAddSwimlane}
-              className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1.5 text-[10px] font-semibold uppercase"
-            >
+            <button type="button" onClick={onAddSwimlane} className="status-chip inline-flex items-center gap-1">
               <Plus className="h-3.5 w-3.5" /> Add Swimlane
             </button>
           </div>

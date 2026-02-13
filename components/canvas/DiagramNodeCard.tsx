@@ -7,7 +7,9 @@ type ConnectState = 'idle' | 'source' | 'candidate';
 
 type DiagramNodeCardProps = {
   node: Node;
-  zoom: number;
+  compactMode: boolean;
+  showBodyMeta: boolean;
+  showFooter: boolean;
   isSelected: boolean;
   isDarkMode: boolean;
   showPorts: boolean;
@@ -103,43 +105,64 @@ const inferStatusChips = (node: Node): string[] => {
   return statuses;
 };
 
+const statusDotClass = (status: string, isDarkMode: boolean) => {
+  if (status === 'AML') {
+    return isDarkMode ? 'bg-emerald-400' : 'bg-emerald-500';
+  }
+  if (status === 'KYC') {
+    return isDarkMode ? 'bg-amber-300' : 'bg-amber-500';
+  }
+  if (status === 'Settlement') {
+    return isDarkMode ? 'bg-sky-300' : 'bg-sky-500';
+  }
+  return isDarkMode ? 'bg-slate-300' : 'bg-slate-500';
+};
+
 const getFamilyClasses = (family: ReturnType<typeof getNodeFamily>, isDarkMode: boolean) => {
   if (family === 'bank') {
     return isDarkMode
-      ? 'border-slate-600 bg-slate-900/95'
+      ? 'border-slate-500 bg-slate-900/92'
       : 'border-slate-300 bg-white';
   }
   if (family === 'ops') {
     return isDarkMode
-      ? 'border-cyan-500/35 bg-slate-900/95'
+      ? 'border-cyan-500/35 bg-slate-900/92'
       : 'border-cyan-200 bg-white';
   }
   if (family === 'control') {
     return isDarkMode
-      ? 'border-rose-500/35 bg-slate-900/95'
+      ? 'border-rose-500/35 bg-slate-900/92'
       : 'border-rose-200 bg-white';
   }
   if (family === 'endpoint') {
     return isDarkMode
-      ? 'border-violet-500/35 bg-slate-900/95'
+      ? 'border-violet-500/35 bg-slate-900/92'
       : 'border-violet-200 bg-white';
   }
   return isDarkMode
-    ? 'border-slate-700 bg-slate-900/95'
+    ? 'border-slate-700 bg-slate-900/92'
     : 'border-slate-200 bg-white';
 };
 
 const getHeaderStripClass = (family: ReturnType<typeof getNodeFamily>) => {
-  if (family === 'bank') return 'from-emerald-500/40 to-emerald-400/10';
-  if (family === 'ops') return 'from-cyan-500/40 to-cyan-400/10';
-  if (family === 'control') return 'from-rose-500/40 to-rose-400/10';
-  if (family === 'endpoint') return 'from-violet-500/40 to-violet-400/10';
-  return 'from-slate-500/35 to-slate-400/10';
+  if (family === 'bank') return 'from-slate-500/45 to-slate-400/5';
+  if (family === 'ops') return 'from-cyan-500/40 to-cyan-400/8';
+  if (family === 'control') return 'from-rose-500/38 to-rose-400/8';
+  if (family === 'endpoint') return 'from-violet-500/38 to-violet-400/8';
+  return 'from-slate-500/35 to-slate-400/8';
+};
+
+const getRadiusClass = (family: ReturnType<typeof getNodeFamily>) => {
+  if (family === 'control') return 'rounded-[14px]';
+  if (family === 'endpoint') return 'rounded-[18px]';
+  return 'rounded-[16px]';
 };
 
 const DiagramNodeCardComponent: React.FC<DiagramNodeCardProps> = ({
   node,
-  zoom,
+  compactMode,
+  showBodyMeta,
+  showFooter,
   isSelected,
   isDarkMode,
   showPorts,
@@ -151,9 +174,6 @@ const DiagramNodeCardComponent: React.FC<DiagramNodeCardProps> = ({
   const family = getNodeFamily(node.type);
   const semanticBadge = getBadge(node);
   const statuses = useMemo(() => inferStatusChips(node), [node]);
-  const compactMode = zoom < 0.35;
-  const showBodyMeta = zoom >= 0.6;
-  const showFooter = zoom >= 0.45;
 
   if (node.type === EntityType.ANCHOR) {
     return (
@@ -162,11 +182,11 @@ const DiagramNodeCardComponent: React.FC<DiagramNodeCardProps> = ({
           connectState === 'source'
             ? 'border-emerald-300 bg-emerald-500 ring-2 ring-emerald-300/80'
             : isSelected
-              ? 'bg-blue-500 ring-2 ring-blue-300'
+              ? 'bg-cyan-500 ring-2 ring-cyan-300'
               : connectState === 'candidate'
                 ? 'border-sky-400 bg-sky-100 ring-2 ring-sky-300/80 dark:bg-sky-500/20'
                 : node.isConnectorHandle
-                  ? 'border-blue-400 bg-blue-100 dark:bg-blue-500/20'
+                  ? 'border-cyan-400 bg-cyan-100 dark:bg-cyan-500/20'
                   : isDarkMode
                     ? 'border-slate-500 bg-slate-500'
                     : 'border-slate-400 bg-slate-400'
@@ -185,17 +205,16 @@ const DiagramNodeCardComponent: React.FC<DiagramNodeCardProps> = ({
 
   return (
     <div
-      className={`group absolute flex flex-col rounded-2xl border shadow-[0_8px_20px_rgba(15,23,42,0.08)] transition-[transform,box-shadow,border-color,opacity] duration-150 ${getFamilyClasses(
-        family,
-        isDarkMode
-      )} ${
+      className={`group absolute flex flex-col border shadow-[0_8px_20px_rgba(15,23,42,0.1)] transition-[transform,box-shadow,border-color,opacity] duration-150 ${getRadiusClass(
+        family
+      )} ${getFamilyClasses(family, isDarkMode)} ${
         connectState === 'source'
           ? 'scale-[1.02] border-emerald-500 ring-2 ring-emerald-300/85 shadow-xl'
           : isSelected
-            ? 'scale-[1.02] border-blue-600 ring-2 ring-blue-500 shadow-xl'
+            ? 'scale-[1.02] border-cyan-600 ring-2 ring-cyan-500 shadow-xl'
             : connectState === 'candidate'
               ? 'border-sky-400 ring-2 ring-sky-300/80'
-              : 'hover:-translate-y-0.5 hover:shadow-[0_10px_26px_rgba(15,23,42,0.12)]'
+              : 'hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(15,23,42,0.14)]'
       }`}
       style={{
         left: node.position.x,
@@ -209,10 +228,10 @@ const DiagramNodeCardComponent: React.FC<DiagramNodeCardProps> = ({
       onMouseDown={(event) => onMouseDown(event, node.id)}
       onClick={(event) => onClick(event, node.id)}
     >
-      <div className={`h-1.5 w-full rounded-t-2xl bg-gradient-to-r ${getHeaderStripClass(family)}`} />
+      <div className={`h-1.5 w-full rounded-t-[inherit] bg-gradient-to-r ${getHeaderStripClass(family)}`} />
 
       {compactMode ? (
-        <div className="flex min-h-[42px] items-center gap-1.5 px-2 py-1.5">
+        <div className="flex min-h-[44px] items-center gap-1.5 px-2 py-1.5">
           <div className="flex h-5 w-5 items-center justify-center rounded-md border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
             <span className="scale-90">{iconNode}</span>
           </div>
@@ -220,14 +239,14 @@ const DiagramNodeCardComponent: React.FC<DiagramNodeCardProps> = ({
         </div>
       ) : (
         <>
-          <div className="flex items-start gap-2 px-2.5 pb-1.5 pt-2">
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
+          <div className="flex items-start gap-2 px-2.5 pb-1 pt-1.5">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
               {iconNode}
             </div>
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-[11px] font-semibold text-slate-800 dark:text-slate-100">{node.label}</div>
+            <div className="min-w-0 flex flex-1 items-start justify-between gap-2">
+              <div className="truncate pt-0.5 text-[11px] font-semibold text-slate-800 dark:text-slate-100">{node.label}</div>
               {semanticBadge ? (
-                <div className="mt-1 inline-flex rounded-full border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.08em] text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.08em] text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                   {semanticBadge}
                 </div>
               ) : null}
@@ -239,23 +258,31 @@ const DiagramNodeCardComponent: React.FC<DiagramNodeCardProps> = ({
               data-testid={`node-meta-${node.id}`}
               className="border-t border-slate-200/90 px-2.5 py-1 text-[9px] text-slate-500 dark:border-slate-700/90 dark:text-slate-400"
             >
-              <div className="truncate">Type: {node.type}</div>
-              {node.accountType ? <div className="truncate">Ledger: {node.accountType}</div> : null}
+              {node.accountType ? (
+                <div className="truncate">
+                  <span className="font-semibold uppercase tracking-[0.06em] text-slate-500 dark:text-slate-300">Ledger</span>{' '}
+                  {node.accountType}
+                </div>
+              ) : (
+                <div className="truncate">{node.type}</div>
+              )}
             </div>
           ) : null}
 
           {showFooter && statuses.length > 0 ? (
             <div
               data-testid={`node-status-${node.id}`}
-              className="flex flex-wrap items-center gap-1 border-t border-slate-200/90 px-2.5 py-1 dark:border-slate-700/90"
+              className="flex items-center gap-1.5 border-t border-slate-200/90 px-2.5 py-0.5 dark:border-slate-700/90"
             >
               {statuses.slice(0, 3).map((status) => (
-                <span
+                <div
                   key={`${node.id}-${status}`}
-                  className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.06em] text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                  title={status}
+                  aria-label={`${status} status`}
+                  className="inline-flex items-center gap-1"
                 >
-                  {status}
-                </span>
+                  <span className={`h-2 w-2 rounded-full ${statusDotClass(status, isDarkMode)}`} />
+                </div>
               ))}
             </div>
           ) : null}
@@ -272,7 +299,7 @@ const DiagramNodeCardComponent: React.FC<DiagramNodeCardProps> = ({
                   ? 'border-emerald-200 bg-emerald-500/25'
                   : connectState === 'candidate'
                     ? 'border-sky-200 bg-sky-500/25'
-                    : 'border-white/80 bg-blue-500/20'
+                    : 'border-white/80 bg-cyan-500/20'
               } hover:scale-110 dark:border-slate-800`}
               style={
                 portIdx === 0
@@ -318,7 +345,7 @@ const DiagramNodeCardComponent: React.FC<DiagramNodeCardProps> = ({
             >
               <span
                 className={`pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full ${
-                  connectState === 'source' ? 'bg-emerald-500' : 'bg-sky-500'
+                  connectState === 'source' ? 'bg-emerald-500' : 'bg-cyan-500'
                 }`}
                 style={{ width: PORT_DOT_SIZE, height: PORT_DOT_SIZE }}
               />

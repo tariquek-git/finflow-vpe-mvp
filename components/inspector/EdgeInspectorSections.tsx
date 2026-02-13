@@ -34,28 +34,22 @@ const FIELD_HELPERS: Record<string, string> = {
   timing: 'Capture settlement cadence or SLA window for this flow.'
 };
 
+const mergeClasses = (...classNames: Array<string | undefined>) => classNames.filter(Boolean).join(' ');
+
 const Field: React.FC<{ label: string; helper?: string; children?: React.ReactNode }> = ({ label, helper, children }) => (
-  <div className="flex flex-col gap-1">
-    <label className="ml-0.5 text-[10px] font-semibold uppercase tracking-[0.09em] text-slate-500 dark:text-slate-400">
-      {label}
-    </label>
+  <div className="inspector-field">
+    <label className="inspector-label">{label}</label>
     {children}
-    {helper ? <span className="ml-0.5 text-[10px] text-slate-500 dark:text-slate-400">{helper}</span> : null}
+    {helper ? <span className="inspector-helper">{helper}</span> : null}
   </div>
 );
 
-const Input: React.FC<React.InputHTMLAttributes<HTMLInputElement>> = (props) => (
-  <input
-    {...props}
-    className="ui-input h-9 w-full px-3 text-xs font-medium outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
-  />
+const Input: React.FC<React.InputHTMLAttributes<HTMLInputElement>> = ({ className, ...props }) => (
+  <input {...props} className={mergeClasses('ui-input inspector-input', className)} />
 );
 
-const Select: React.FC<React.SelectHTMLAttributes<HTMLSelectElement>> = (props) => (
-  <select
-    {...props}
-    className="ui-input h-9 w-full cursor-pointer appearance-none px-3 text-xs font-medium outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
-  >
+const Select: React.FC<React.SelectHTMLAttributes<HTMLSelectElement>> = ({ className, ...props }) => (
+  <select {...props} className={mergeClasses('ui-input inspector-input inspector-select', className)}>
     {props.children}
   </select>
 );
@@ -65,12 +59,12 @@ const PanelSection: React.FC<{ title: string; icon: React.ReactNode; children?: 
   icon,
   children
 }) => (
-  <section className="mb-3 rounded-xl border border-slate-200 bg-white p-2.5 dark:border-slate-700 dark:bg-slate-900">
-    <div className="mb-2 flex items-center gap-2 border-b border-slate-200 px-1 pb-1 dark:border-slate-700">
-      <div className="text-blue-600 dark:text-blue-300">{icon}</div>
+  <section className="inspector-section">
+    <div className="inspector-section-head">
+      <div className="text-cyan-600 dark:text-cyan-300">{icon}</div>
       <h3 className="ui-section-title">{title}</h3>
     </div>
-    <div className="space-y-2.5 px-1">{children}</div>
+    <div className="inspector-body">{children}</div>
   </section>
 );
 
@@ -81,22 +75,31 @@ const CollapsibleSection: React.FC<{
   onToggle: () => void;
   children?: React.ReactNode;
   testId?: string;
-}> = ({ title, icon, isOpen, onToggle, children, testId }) => (
-  <section className="mb-3 rounded-xl border border-slate-200 bg-white p-2.5 dark:border-slate-700 dark:bg-slate-900">
+  bodyClassName?: string;
+}> = ({ title, icon, isOpen, onToggle, children, testId, bodyClassName }) => (
+  <section className="inspector-section">
     <button
       type="button"
       onClick={onToggle}
       data-testid={testId}
       aria-expanded={isOpen}
-      className="flex w-full items-center justify-between gap-2 border-b border-slate-200 px-1 pb-1 dark:border-slate-700"
+      className="inspector-toggle inspector-section-head"
     >
       <span className="flex items-center gap-2">
-        <span className="text-blue-600 dark:text-blue-300">{icon}</span>
+        <span className="text-cyan-600 dark:text-cyan-300">{icon}</span>
         <span className="ui-section-title">{title}</span>
       </span>
       {isOpen ? <ChevronDown className="h-4 w-4 text-slate-400" /> : <ChevronRight className="h-4 w-4 text-slate-400" />}
     </button>
-    {isOpen ? <div className="space-y-2.5 px-1 pt-2.5">{children}</div> : null}
+    <div
+      className={`grid transition-[grid-template-rows,opacity] duration-200 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${
+        isOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+      }`}
+    >
+      <div className="overflow-hidden">
+        <div className={bodyClassName || 'inspector-body pt-2.5'}>{children}</div>
+      </div>
+    </div>
   </section>
 );
 
@@ -161,6 +164,7 @@ const EdgeInspectorSections: React.FC<EdgeInspectorSectionsProps> = ({
         isOpen={edgeAdvancedOpen}
         onToggle={onToggleEdgeAdvanced}
         testId="inspector-toggle-edge-advanced"
+        bodyClassName="inspector-body pt-2.5 min-h-[680px]"
       >
         <Field label="Sequence">
           <Input type="number" min="0" {...register('sequence', { valueAsNumber: true })} />
@@ -169,7 +173,7 @@ const EdgeInspectorSections: React.FC<EdgeInspectorSectionsProps> = ({
           <button
             type="button"
             onClick={() => setValue('isFX', !edgeIsFX, { shouldDirty: true, shouldValidate: true })}
-            className={`rounded-md border px-3 py-2 text-[10px] font-semibold uppercase transition-all ${
+            className={`rounded-md border px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.05em] transition-all ${
               edgeIsFX
                 ? 'border-emerald-600 bg-emerald-500 text-white shadow-md'
                 : 'border-slate-300 bg-slate-50 text-slate-500 dark:border-slate-700 dark:bg-slate-800'
@@ -185,9 +189,9 @@ const EdgeInspectorSections: React.FC<EdgeInspectorSectionsProps> = ({
                 shouldValidate: true
               })
             }
-            className={`rounded-md border px-3 py-2 text-[10px] font-semibold uppercase transition-all ${
+            className={`rounded-md border px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.05em] transition-all ${
               edgeIsExceptionPath
-                ? 'bg-rose-500 border-rose-600 text-white shadow-md'
+                ? 'border-rose-600 bg-rose-500 text-white shadow-md'
                 : 'border-slate-300 bg-slate-50 text-slate-500 dark:border-slate-700 dark:bg-slate-800'
             }`}
           >
@@ -214,7 +218,7 @@ const EdgeInspectorSections: React.FC<EdgeInspectorSectionsProps> = ({
         <Field label="Notes">
           <textarea
             {...register('description')}
-            className="ui-input h-24 w-full resize-none p-3 text-xs outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+            className="ui-input inspector-textarea"
             placeholder="Settlement rules, risk, data exchanged..."
           />
         </Field>

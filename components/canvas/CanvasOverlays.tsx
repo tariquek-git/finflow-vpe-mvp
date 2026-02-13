@@ -76,15 +76,15 @@ const CanvasOverlays: React.FC<CanvasOverlaysProps> = ({
               <path
                 d={`M ${GRID_SIZE} 0 L 0 0 0 ${GRID_SIZE}`}
                 fill="none"
-                stroke={isDarkMode ? '#394150' : '#d5dde8'}
+                stroke={isDarkMode ? '#334155' : '#d7e0ee'}
                 strokeWidth="1"
-                opacity="0.82"
+                opacity="0.78"
               />
             </pattern>
           ) : null}
           {gridMode === 'dots' ? (
             <pattern id={gridPatternId} width={GRID_SIZE} height={GRID_SIZE} patternUnits="userSpaceOnUse">
-              <circle cx="1.5" cy="1.5" r="1.2" fill={isDarkMode ? '#4b5563' : '#b2bccb'} opacity="0.78" />
+              <circle cx="1.5" cy="1.5" r="1.15" fill={isDarkMode ? '#475569' : '#b9c6d8'} opacity="0.72" />
             </pattern>
           ) : null}
         </defs>
@@ -114,27 +114,27 @@ const CanvasOverlays: React.FC<CanvasOverlaysProps> = ({
                   fill={
                     index % 2 === 0
                       ? isDarkMode
-                        ? '#1f2834'
-                        : '#f3f6fb'
+                        ? '#1a2638'
+                        : '#eff5fd'
                       : isDarkMode
-                        ? '#242d39'
-                        : '#eef2f8'
+                        ? '#1f2d42'
+                        : '#f6f9fe'
                   }
-                  opacity={0.7}
+                  opacity={0.58}
                 />
                 <line
                   x1={-1000}
                   y1={y}
                   x2={swimlaneWidth}
                   y2={y}
-                  stroke={isDarkMode ? '#334155' : '#d3dae4'}
+                  stroke={isDarkMode ? '#334155' : '#d4dfef'}
                   strokeWidth="1"
                 />
                 <text
                   x={-960}
                   y={y + 24}
                   fontSize="12"
-                  fill={isDarkMode ? '#cbd5e1' : '#61728b'}
+                  fill={isDarkMode ? '#bfcede' : '#657996'}
                   fontWeight="600"
                   letterSpacing="0.03em"
                 >
@@ -158,8 +158,8 @@ const CanvasOverlays: React.FC<CanvasOverlaysProps> = ({
                 width={width + 12}
                 height={height + 12}
                 rx={16}
-                fill="rgba(244, 63, 94, 0.08)"
-                stroke="rgba(244, 63, 94, 0.42)"
+                fill="rgba(244, 63, 94, 0.07)"
+                stroke="rgba(244, 63, 94, 0.34)"
                 strokeDasharray="4,4"
                 strokeWidth="1"
                 className="pointer-events-none"
@@ -181,8 +181,8 @@ const CanvasOverlays: React.FC<CanvasOverlaysProps> = ({
                 width={width + 8}
                 height={height + 8}
                 rx={14}
-                fill="rgba(14, 165, 233, 0.07)"
-                stroke="rgba(14, 165, 233, 0.38)"
+                fill="rgba(14, 165, 233, 0.06)"
+                stroke="rgba(14, 165, 233, 0.3)"
                 strokeWidth="1"
                 className="pointer-events-none"
               />
@@ -198,7 +198,7 @@ const CanvasOverlays: React.FC<CanvasOverlaysProps> = ({
               y1={-GRID_EXTENT / 2}
               x2={snapGuide.x}
               y2={GRID_EXTENT / 2}
-              stroke={isDarkMode ? '#60a5fa' : '#2563eb'}
+              stroke={isDarkMode ? '#67e8f9' : '#0891b2'}
               strokeWidth={1}
               strokeDasharray="4,4"
               opacity={0.82}
@@ -210,7 +210,7 @@ const CanvasOverlays: React.FC<CanvasOverlaysProps> = ({
               y1={snapGuide.y}
               x2={GRID_EXTENT / 2}
               y2={snapGuide.y}
-              stroke={isDarkMode ? '#60a5fa' : '#2563eb'}
+              stroke={isDarkMode ? '#67e8f9' : '#0891b2'}
               strokeWidth={1}
               strokeDasharray="4,4"
               opacity={0.82}

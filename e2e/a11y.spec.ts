@@ -1,5 +1,14 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+
+const clickNodeByLabel = async (page: Page, label: string) => {
+  const locator = page.locator('div.group.absolute').filter({ hasText: label }).first();
+  const box = await locator.boundingBox();
+  if (!box) {
+    throw new Error(`Could not find node bounding box for ${label}`);
+  }
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+};
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => window.localStorage.clear());
@@ -21,13 +30,15 @@ test('primary controls expose accessible names', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Connect tool' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Text tool' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Open layout controls' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Delete selected item' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Insert connector' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Open quick start help' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Restore Backup' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Reset' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Import JSON' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Export JSON' })).toBeVisible();
+
+  await clickNodeByLabel(page, 'Sponsor Bank');
+  await expect(page.getByRole('button', { name: 'Delete selected item' })).toBeVisible();
 });
 
 test('toolbar help control is keyboard focusable with visible focus state', async ({ page }) => {

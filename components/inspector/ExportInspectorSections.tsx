@@ -17,9 +17,9 @@ const PanelSection: React.FC<{ title: string; icon: React.ReactNode; children?: 
   icon,
   children
 }) => (
-  <section className="mb-3 rounded-xl border border-slate-200 bg-white p-2.5 dark:border-slate-700 dark:bg-slate-900">
+  <section className="mb-3 rounded-xl border border-slate-200 bg-white p-2.5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
     <div className="mb-2 flex items-center gap-2 border-b border-slate-200 px-1 pb-1 dark:border-slate-700">
-      <div className="text-blue-600 dark:text-blue-300">{icon}</div>
+      <div className="text-cyan-600 dark:text-cyan-300">{icon}</div>
       <h3 className="ui-section-title">{title}</h3>
     </div>
     <div className="space-y-2.5 px-1">{children}</div>
@@ -92,7 +92,7 @@ const ExportInspectorSections: React.FC<ExportInspectorSectionsProps> = ({
         type="button"
         data-testid="toolbar-reset-canvas"
         onClick={onResetCanvas}
-        className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700"
+        className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/20 dark:text-rose-100"
       >
         New / Reset Canvas
       </button>

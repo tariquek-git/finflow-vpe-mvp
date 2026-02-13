@@ -1,4 +1,4 @@
-# Local MVP Launch Checklist (v0.2.3)
+# Local MVP Launch Checklist (v0.2.4)
 
 ## Local Gate Evidence
 - [x] `npm run build`
@@ -8,13 +8,13 @@
 - [x] `PW_PORT=4273 npm run test:a11y`
 
 ## Release Tag
-- [x] Create annotated tag `v0.2.3`
+- [x] Create annotated tag `v0.2.4`
 - [x] Push `main` and tags to local origin
-- [x] Verify `v0.2.3` exists on origin
+- [x] Verify `v0.2.4` exists on origin
 
 ## Local Deliverable Freeze
-- [x] Generate `/Users/tarique/Downloads/banking-diagram-mvp_v0.2.3_handoff_20260213-140430.tar.gz`
-- [x] Generate `/Users/tarique/Downloads/banking-diagram-mvp_v0.2.3_handoff_20260213-140430.zip`
+- [x] Generate `/Users/tarique/Downloads/banking-diagram-mvp_v0.2.4_handoff_20260213-175637.tar.gz`
+- [x] Generate `/Users/tarique/Downloads/banking-diagram-mvp_v0.2.4_handoff_20260213-175637.zip`
 
 ## Optional Public Promotion (post local signoff)
 - [ ] Deploy rebased `main` to hosted target

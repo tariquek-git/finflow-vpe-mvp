@@ -1,15 +1,10 @@
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import {
-  Sparkles,
-  ChevronLeft,
-  ChevronRight
-} from 'lucide-react';
+import { Bot, Sparkles, X } from 'lucide-react';
 import FlowCanvas from './components/FlowCanvas';
 import Sidebar from './components/Sidebar';
 import Inspector, { type InspectorTab } from './components/Inspector';
 import TopBar from './components/layout/TopBar';
-import BottomStatusBar from './components/layout/BottomStatusBar';
 import FloatingContextBar from './components/layout/FloatingContextBar';
 import ShortcutsModal from './components/help/ShortcutsModal';
 import {
@@ -26,7 +21,6 @@ import {
   DiagramSnapshot,
   LayoutSettings,
   ExportPayloadV2,
-  GridMode,
   LaneGroupingMode
 } from './types';
 import { useUIStore } from './stores/uiStore';
@@ -64,7 +58,7 @@ const STARTER_SNAPSHOT: DiagramSnapshot = {
       type: EntityType.SPONSOR_BANK,
       label: 'Sponsor Bank',
       shape: NodeShape.RECTANGLE,
-      position: { x: 360, y: 320 },
+      position: { x: 280, y: 320 },
       zIndex: 10,
       swimlaneId: 2
     },
@@ -73,7 +67,7 @@ const STARTER_SNAPSHOT: DiagramSnapshot = {
       type: EntityType.PROCESSOR,
       label: 'Processor',
       shape: NodeShape.RECTANGLE,
-      position: { x: 680, y: 320 },
+      position: { x: 580, y: 320 },
       zIndex: 10,
       swimlaneId: 2
     },
@@ -82,7 +76,7 @@ const STARTER_SNAPSHOT: DiagramSnapshot = {
       type: EntityType.NETWORK,
       label: 'Card Network',
       shape: NodeShape.RECTANGLE,
-      position: { x: 1000, y: 320 },
+      position: { x: 880, y: 320 },
       zIndex: 10,
       swimlaneId: 2
     }
@@ -422,6 +416,7 @@ const App: React.FC = () => {
   const setActiveTool = useUIStore((state) => state.setActiveTool);
   const [aiPrompt, setAiPrompt] = useState('');
   const [isAILoading, setIsAILoading] = useState(false);
+  const [isAIModalOpen, setIsAIModalOpen] = useState(false);
   const [isQuickStartVisible, setIsQuickStartVisible] = useState(() => {
     if (typeof window === 'undefined') return false;
     return window.localStorage.getItem(ONBOARDING_DISMISSED_STORAGE_KEY) !== 'true';
@@ -429,7 +424,6 @@ const App: React.FC = () => {
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
   const [inspectorTabRequest, setInspectorTabRequest] = useState<InspectorTab | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
-  const [pointerWorld, setPointerWorld] = useState<Position | null>(null);
   const [showMinimap, setShowMinimap] = useState(false);
   const [viewport, setViewport] = useState<ViewportTransform>({ x: 0, y: 0, zoom: 1 });
   const [storageWarning, setStorageWarning] = useState<string | null>(null);
@@ -449,6 +443,8 @@ const App: React.FC = () => {
   const lastNodeEditRef = useRef<EditMergeState>({ id: null, at: 0 });
   const lastEdgeEditRef = useRef<EditMergeState>({ id: null, at: 0 });
   const lastNudgeRef = useRef<EditMergeState>({ id: null, at: 0 });
+  const pendingNodePositionsRef = useRef<Record<string, Position>>({});
+  const nodePositionRafRef = useRef<number | null>(null);
   const hasLoadedFromStorage = useRef(false);
   const saveDiagramTimeoutRef = useRef<number | null>(null);
   const saveLayoutTimeoutRef = useRef<number | null>(null);
@@ -492,10 +488,18 @@ const App: React.FC = () => {
       setIsSidebarOpen(false);
       setIsInspectorOpen(false);
     } else {
-      setIsSidebarOpen(true);
+      setIsSidebarOpen(false);
     }
     wasMobileViewportRef.current = isMobileViewport;
   }, [isMobileViewport]);
+
+  useEffect(() => {
+    return () => {
+      if (nodePositionRafRef.current !== null) {
+        window.cancelAnimationFrame(nodePositionRafRef.current);
+      }
+    };
+  }, []);
 
   const getCurrentSnapshot = useCallback(() => cloneSnapshot({ nodes, edges, drawings }), [nodes, edges, drawings]);
 
@@ -644,6 +648,36 @@ const App: React.FC = () => {
     }
     setEdges((prev) => prev.map((e) => (e.id === updatedEdge.id ? updatedEdge : e)));
   }, [pushHistory]);
+
+  const flushPendingNodePositions = useCallback(() => {
+    nodePositionRafRef.current = null;
+    const pending = pendingNodePositionsRef.current;
+    pendingNodePositionsRef.current = {};
+    const updates = Object.entries(pending);
+    if (updates.length === 0) return;
+
+    const updatesById = new Map<string, Position>(updates);
+    setNodes((prev) =>
+      prev.map((node) => {
+        const nextPosition = updatesById.get(node.id);
+        if (!nextPosition) return node;
+        return {
+          ...node,
+          position: nextPosition,
+          swimlaneId: Math.floor(Math.max(0, nextPosition.y) / 300) + 1
+        };
+      })
+    );
+  }, []);
+
+  const handleUpdateNodePosition = useCallback(
+    (id: string, pos: Position) => {
+      pendingNodePositionsRef.current[id] = pos;
+      if (nodePositionRafRef.current !== null) return;
+      nodePositionRafRef.current = window.requestAnimationFrame(flushPendingNodePositions);
+    },
+    [flushPendingNodePositions]
+  );
 
   const handleSelectEdge = useCallback((id: string | null) => {
     setInspectorTabRequest(null);
@@ -1379,68 +1413,6 @@ const App: React.FC = () => {
     setViewport((prev) => ({ ...prev, zoom: Math.max(0.3, prev.zoom * 0.9) }));
   }, []);
 
-  const handleResetView = useCallback(() => {
-    setViewport({ x: 0, y: 0, zoom: 1 });
-  }, []);
-
-  const handleFitView = useCallback(() => {
-    if (!containerRef.current || nodes.length === 0) {
-      setViewport({ x: 0, y: 0, zoom: 1 });
-      return;
-    }
-
-    const padding = 120;
-    let minX = Number.POSITIVE_INFINITY;
-    let minY = Number.POSITIVE_INFINITY;
-    let maxX = Number.NEGATIVE_INFINITY;
-    let maxY = Number.NEGATIVE_INFINITY;
-
-    nodes.forEach((node) => {
-      const { width, height } = getNodeDimensions(node);
-      minX = Math.min(minX, node.position.x);
-      minY = Math.min(minY, node.position.y);
-      maxX = Math.max(maxX, node.position.x + width);
-      maxY = Math.max(maxY, node.position.y + height);
-    });
-
-    if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
-      setViewport({ x: 0, y: 0, zoom: 1 });
-      return;
-    }
-
-    minX -= padding;
-    minY -= padding;
-    maxX += padding;
-    maxY += padding;
-
-    const boundsWidth = Math.max(1, maxX - minX);
-    const boundsHeight = Math.max(1, maxY - minY);
-    const rect = containerRef.current.getBoundingClientRect();
-    const viewportWidth = Math.max(1, rect.width);
-    const viewportHeight = Math.max(1, rect.height);
-    const zoom = Math.min(2.2, Math.max(0.3, Math.min(viewportWidth / boundsWidth, viewportHeight / boundsHeight)));
-    const centerX = (minX + maxX) / 2;
-    const centerY = (minY + maxY) / 2;
-
-    setViewport({
-      zoom,
-      x: viewportWidth / 2 - centerX * zoom,
-      y: viewportHeight / 2 - centerY * zoom
-    });
-  }, [nodes]);
-
-  const handleCycleGridMode = useCallback(() => {
-    if (gridMode === 'none') {
-      setGridMode('lines');
-      return;
-    }
-    if (gridMode === 'lines') {
-      setGridMode('dots');
-      return;
-    }
-    setGridMode('none');
-  }, [gridMode, setGridMode]);
-
   const handleOpenCanvasControls = useCallback(() => {
     setInspectorTabRequest('canvas');
     setIsInspectorOpen(true);
@@ -1453,10 +1425,29 @@ const App: React.FC = () => {
     const clampAnchor = (x: number, y: number) => {
       if (!containerRef.current) return { x, y };
       const rect = containerRef.current.getBoundingClientRect();
-      const horizontalPadding = 120;
+      const trayHalfWidth = hasSelectedEdge
+        ? 210
+        : selectedNodeIds.length >= 3
+          ? 220
+          : selectedNodeIds.length >= 2
+            ? 190
+            : 130;
+      const horizontalPadding = 12;
+      const minAnchorX = horizontalPadding + trayHalfWidth;
+      const maxAnchorX = rect.width - horizontalPadding - trayHalfWidth;
       const verticalPadding = 18;
-      let clampedX = Math.min(rect.width - horizontalPadding, Math.max(horizontalPadding, x));
-      let clampedY = Math.min(rect.height - verticalPadding, Math.max(verticalPadding, y));
+      // Keep contextual tray clear of the persistent bottom dock plus a safety gap.
+      const dockTopInset = isMobileViewport ? 118 : 126;
+      const trayHeight = 52;
+      const trayGap = 12;
+      const bottomReserved = dockTopInset + trayHeight + trayGap;
+      let clampedX = x;
+      if (maxAnchorX > minAnchorX) {
+        clampedX = Math.min(maxAnchorX, Math.max(minAnchorX, x));
+      } else {
+        clampedX = rect.width / 2;
+      }
+      let clampedY = Math.min(rect.height - bottomReserved, Math.max(verticalPadding, y));
 
       // Avoid overlap with the minimap region in the bottom-right corner.
       if (showMinimap && clampedX > rect.width - 240 && clampedY > rect.height - 200) {
@@ -1510,7 +1501,7 @@ const App: React.FC = () => {
     }
 
     return null;
-  }, [edges, nodes, selectedEdgeId, selectedNodeIds, showMinimap, viewport.x, viewport.y, viewport.zoom]);
+  }, [edges, hasSelectedEdge, isMobileViewport, nodes, selectedEdgeId, selectedNodeIds, showMinimap, viewport.x, viewport.y, viewport.zoom]);
 
   const screenToWorld = useCallback(
     (clientX: number, clientY: number) => {
@@ -1653,7 +1644,8 @@ const App: React.FC = () => {
       pushToast('AI generation failed. Check configuration and try again.', 'error');
     } finally { 
       setIsAILoading(false); 
-      setAiPrompt(''); 
+      setAiPrompt('');
+      setIsAIModalOpen(false);
     }
   };
 
@@ -1764,8 +1756,17 @@ const App: React.FC = () => {
         onOpenHelp={openHelp}
         onUndo={handleUndo}
         onRedo={handleRedo}
+        onZoomIn={handleZoomIn}
+        onZoomOut={handleZoomOut}
+        onOpenCanvasControls={handleOpenCanvasControls}
         canUndo={past.length > 0}
         canRedo={future.length > 0}
+        isAIEnabled={isAIEnabled}
+        isAILoading={isAILoading}
+        onOpenAiLauncher={() => {
+          prefetchAIModule();
+          setIsAIModalOpen(true);
+        }}
         onRestoreRecovery={handleRestoreRecovery}
         onResetCanvas={handleResetCanvas}
         onImportDiagram={() => importInputRef.current?.click()}
@@ -1773,45 +1774,6 @@ const App: React.FC = () => {
         onExportSvg={handleExportSvg}
         onExportPng={handleExportPng}
         onExportPdf={handleExportPdf}
-        centerSlot={
-          isAIEnabled ? (
-            <div className={`group relative ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>
-              <Sparkles
-                className={`absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-blue-500 ${
-                  isAILoading ? 'animate-pulse' : 'opacity-70'
-                }`}
-              />
-              <input
-                type="text"
-                placeholder={isAILoading ? 'Drafting flow...' : 'Describe a flow to generate...'}
-                className={`ui-input h-10 w-full rounded-full pl-10 pr-28 text-sm outline-none transition-all focus:ring-2 focus:ring-blue-500/20 ${
-                  isDarkMode ? 'bg-slate-900' : 'bg-white'
-                }`}
-                value={aiPrompt}
-                onChange={(e) => setAiPrompt(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && canGenerateFlow && handleGenerateFlow()}
-                onFocus={prefetchAIModule}
-              />
-              <button
-                onClick={handleGenerateFlow}
-                disabled={!canGenerateFlow}
-                onMouseEnter={prefetchAIModule}
-                className="absolute right-1.5 top-1.5 h-7 rounded-full bg-gradient-to-b from-blue-600 to-blue-700 px-4 text-[11px] font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-45"
-              >
-                {isAILoading ? 'Generating...' : 'Generate'}
-              </button>
-            </div>
-          ) : (
-            <div
-              data-testid="ai-disabled-badge"
-              className={`pointer-events-none inline-flex rounded-full border px-2.5 py-1.5 text-[11px] font-semibold ${
-                isDarkMode ? 'border-slate-700 bg-slate-900 text-slate-300' : 'border-slate-300 bg-white text-slate-600'
-              }`}
-            >
-              AI disabled for MVP
-            </div>
-          )
-        }
       />
 
       <input
@@ -1823,6 +1785,83 @@ const App: React.FC = () => {
       />
 
       <ShortcutsModal isOpen={isShortcutsOpen} onClose={() => setIsShortcutsOpen(false)} isDarkMode={isDarkMode} />
+
+      {isAIEnabled && isAIModalOpen ? (
+        <div className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-950/45 px-4 backdrop-blur-[2px]">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="AI flow generator"
+            className={`w-full max-w-xl rounded-2xl border p-4 shadow-2xl ${
+              isDarkMode ? 'border-slate-700 bg-slate-900 text-slate-100' : 'border-slate-200 bg-white text-slate-900'
+            }`}
+          >
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div>
+                <div className="ui-section-title">AI Generator</div>
+                <h3 className="mt-1 text-base font-semibold tracking-tight">Generate a flow from a prompt</h3>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  Describe your scenario and FinFlow will draft entities, rails, and links.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAIModalOpen(false)}
+                className="status-chip !h-8 !w-8 !px-0"
+                aria-label="Close AI generator"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="relative">
+              <Sparkles
+                className={`pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-cyan-500 ${
+                  isAILoading ? 'animate-pulse' : 'opacity-80'
+                }`}
+              />
+              <textarea
+                autoFocus
+                value={aiPrompt}
+                onChange={(event) => setAiPrompt(event.target.value)}
+                onKeyDown={(event) => {
+                  if ((event.metaKey || event.ctrlKey) && event.key === 'Enter' && canGenerateFlow) {
+                    event.preventDefault();
+                    void handleGenerateFlow();
+                  }
+                }}
+                onFocus={prefetchAIModule}
+                rows={4}
+                placeholder="Example: consumer card purchase with sponsor bank settlement via processor and card network."
+                className="ui-input w-full resize-none rounded-xl py-3 pl-10 pr-3 text-sm"
+              />
+            </div>
+
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <div className="text-[11px] text-slate-500 dark:text-slate-400">Use Cmd/Ctrl+Enter to generate.</div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setIsAIModalOpen(false)}
+                  className="ui-button-secondary px-3 py-2 text-xs font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onMouseEnter={prefetchAIModule}
+                  onClick={() => void handleGenerateFlow()}
+                  disabled={!canGenerateFlow}
+                  className="ui-button-primary inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  <Bot className="h-4 w-4" />
+                  {isAILoading ? 'Generating...' : 'Generate Flow'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div
         data-testid="toast-container"
@@ -1862,13 +1901,13 @@ const App: React.FC = () => {
         )}
 
         <div
-          className={`flex flex-col overflow-hidden rounded-lg border transition-all duration-300 ${
+          className={`flex flex-col overflow-hidden rounded-2xl border transition-all duration-200 ${
             isMobileViewport
-              ? `absolute inset-y-0 left-0 z-40 w-72 transform ${
-                  isSidebarOpen ? 'translate-x-0 shadow-xl' : '-translate-x-[110%]'
-                } transition-transform`
-              : `${isSidebarOpen ? 'w-72' : 'w-0'} relative z-30`
-          } ${isDarkMode ? 'border-slate-700 bg-slate-900' : 'border-slate-200 bg-white'}`}
+              ? `absolute inset-y-0 left-0 z-40 w-[min(92vw,22rem)] transform ${
+                  isSidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-[110%]'
+                }`
+              : `${isSidebarOpen ? 'w-[22rem]' : 'w-[3.5rem]'} relative z-30`
+          } ${isDarkMode ? 'border-slate-700 bg-slate-900/95' : 'border-slate-200 bg-white/95'}`}
         >
           <Sidebar
             onAddNode={(type) => {
@@ -1881,21 +1920,14 @@ const App: React.FC = () => {
             overlayMode={overlayMode}
             onToggleRiskOverlay={handleToggleRiskOverlay}
             onToggleLedgerOverlay={handleToggleLedgerOverlay}
+            isExpanded={isSidebarOpen}
+            onToggleExpanded={() => setIsSidebarOpen((prev) => !prev)}
           />
-          <button
-            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            aria-label={isSidebarOpen ? 'Collapse component library' : 'Expand component library'}
-            className={`absolute -right-3 top-1/2 z-50 hidden h-11 w-6 -translate-y-1/2 items-center justify-center rounded-full border shadow-sm transition lg:flex ${
-              isDarkMode ? 'border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800' : 'border-slate-300 bg-white text-slate-500 hover:bg-slate-100'
-            }`}
-          >
-            {isSidebarOpen ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-          </button>
         </div>
 
         <div
-          className={`relative ${isMobileViewport ? 'mx-0' : 'mx-2'} flex-1 overflow-hidden rounded-xl border ${
-            isDarkMode ? 'border-slate-700 bg-slate-900' : 'border-slate-200 bg-white'
+          className={`relative ${isMobileViewport ? 'mx-0' : 'mx-2'} flex-1 overflow-hidden rounded-2xl border ${
+            isDarkMode ? 'border-slate-700 bg-slate-900/85' : 'border-slate-200 bg-white/80'
           }`}
           data-testid="canvas-dropzone"
           ref={containerRef}
@@ -1913,19 +1945,7 @@ const App: React.FC = () => {
             selectedEdgeId={selectedEdgeId}
             onSelectNodes={handleSelectNodes}
             onSelectEdge={handleSelectEdge}
-            onUpdateNodePosition={(id, pos) =>
-              setNodes((prev) =>
-                prev.map((n) =>
-                  n.id === id
-                    ? {
-                        ...n,
-                        position: pos,
-                        swimlaneId: Math.floor(Math.max(0, pos.y) / 300) + 1
-                      }
-                    : n
-                )
-              )
-            }
+            onUpdateNodePosition={handleUpdateNodePosition}
             onBeginNodeMove={(_ids) => pushHistory()}
             onConnect={handleConnect}
             isDarkMode={isDarkMode}
@@ -1949,7 +1969,6 @@ const App: React.FC = () => {
             showMinimap={showMinimap}
             viewport={viewport}
             onViewportChange={setViewport}
-            onPointerWorldChange={setPointerWorld}
             exportLayerRef={exportLayerRef}
           />
 
@@ -1994,6 +2013,7 @@ const App: React.FC = () => {
 
           <FloatingContextBar
             isDarkMode={isDarkMode}
+            isMobileViewport={isMobileViewport}
             anchor={floatingContextAnchor()}
             activeTool={activeTool}
             onSetActiveTool={setActiveTool}
@@ -2016,32 +2036,16 @@ const App: React.FC = () => {
             onToggleMidArrow={handleToggleSelectedMidArrow}
           />
 
-          <BottomStatusBar
-            isDarkMode={isDarkMode}
-            zoom={viewport.zoom}
-            onZoomIn={handleZoomIn}
-            onZoomOut={handleZoomOut}
-            onResetView={handleResetView}
-            onFitView={handleFitView}
-            snapToGrid={snapToGrid}
-            onToggleSnap={() => setSnapToGrid((prev) => !prev)}
-            gridMode={gridMode}
-            onCycleGridMode={handleCycleGridMode}
-            pointerWorld={pointerWorld}
-            selectedNodeCount={selectedNodeIds.length}
-            hasSelectedEdge={hasSelectedEdge}
-            onOpenCanvasControls={handleOpenCanvasControls}
-          />
         </div>
 
         <div
-          className={`overflow-hidden rounded-lg border transition-all duration-300 ${
+          className={`overflow-hidden rounded-2xl border transition-[width,transform,opacity] duration-200 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${
             isMobileViewport
               ? `absolute inset-y-0 right-0 z-40 w-[min(92vw,340px)] transform ${
-                  isInspectorOpen ? 'translate-x-0 shadow-xl' : 'translate-x-[110%]'
-                } transition-transform`
-              : `${isInspectorOpen ? 'w-[340px]' : 'w-0'} relative z-30`
-          } ${isDarkMode ? 'border-slate-700 bg-slate-800/95' : 'border-slate-200 bg-white'}`}
+                  isInspectorOpen ? 'translate-x-0 opacity-100 shadow-xl' : 'translate-x-[110%] opacity-0'
+                }`
+              : `${isInspectorOpen ? 'w-[340px] translate-x-0 opacity-100' : 'w-0 translate-x-2 opacity-0'} relative z-30`
+          } ${isDarkMode ? 'border-slate-700 bg-slate-800/95' : 'border-slate-200 bg-white/95'}`}
         >
           {isInspectorOpen && (
             <Inspector

@@ -358,7 +358,7 @@ const Inspector: React.FC<InspectorProps> = ({
         nodeForm.setFocus(fieldToRefocus);
       });
     }
-  }, [selectedNode?.id, selectedNode, nodeForm]);
+  }, [selectedNode?.id, nodeForm]);
 
   useEffect(() => {
     const fieldToRefocus = pickActiveField(EDGE_FIELD_NAMES);
@@ -368,7 +368,7 @@ const Inspector: React.FC<InspectorProps> = ({
         edgeForm.setFocus(fieldToRefocus);
       });
     }
-  }, [selectedEdge?.id, selectedEdge, edgeForm]);
+  }, [selectedEdge?.id, edgeForm]);
 
   useLayoutEffect(() => {
     const container = scrollBodyRef.current;
@@ -467,15 +467,15 @@ const Inspector: React.FC<InspectorProps> = ({
   }, [edgeValues, selectedEdge, onUpdateEdge]);
 
   return (
-    <div className={`flex h-full flex-col ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
+    <div className={`flex h-full flex-col ${isDarkMode ? 'bg-slate-900/95' : 'bg-white/95'}`}>
       <div
         className={`sticky top-0 z-10 border-b px-3 py-2 backdrop-blur ${
-          isDarkMode ? 'border-slate-700 bg-slate-900/95' : 'border-slate-200 bg-white/95'
+          isDarkMode ? 'border-slate-700/90 bg-slate-900/95' : 'border-slate-200/90 bg-white/95'
         }`}
       >
         <div className="mb-2 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <div className="h-2 w-2 rounded-full bg-blue-500" />
+            <div className="h-2 w-2 rounded-full bg-cyan-500" />
             <h2 className="text-xs font-semibold uppercase tracking-[0.14em] dark:text-slate-200">Inspector</h2>
           </div>
           <button
@@ -487,7 +487,7 @@ const Inspector: React.FC<InspectorProps> = ({
           </button>
         </div>
 
-        <div className="grid grid-cols-4 gap-1 rounded-md border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-800">
+        <div className="grid grid-cols-4 gap-1 rounded-lg border border-slate-200/90 bg-slate-50/85 p-1 dark:border-slate-700/90 dark:bg-slate-800/85">
           {tabMeta.map((tab) => {
             const disabled = (tab.id === 'node' && !selectedNode) || (tab.id === 'edge' && !selectedEdge);
             return (
@@ -498,10 +498,10 @@ const Inspector: React.FC<InspectorProps> = ({
                 disabled={disabled}
                 aria-pressed={activeTab === tab.id}
                 onClick={() => handleTabClick(tab.id)}
-                className={`rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] transition-colors ${
+                className={`min-w-0 truncate rounded-md px-2 py-1.5 text-[11px] font-semibold uppercase tracking-[0.05em] transition-colors ${
                   activeTab === tab.id
-                    ? 'bg-blue-600 text-white'
-                    : 'text-slate-500 hover:bg-white dark:text-slate-400 dark:hover:bg-slate-700'
+                    ? 'bg-cyan-700 text-white dark:bg-cyan-600'
+                    : 'text-slate-500 hover:bg-white dark:text-slate-400 dark:hover:bg-slate-700/90'
                 }`}
               >
                 {tab.label}
@@ -518,15 +518,15 @@ const Inspector: React.FC<InspectorProps> = ({
       >
         <div
           className={`sticky top-0 z-[1] mb-2 rounded-lg border px-2.5 py-2 backdrop-blur ${
-            isDarkMode ? 'border-slate-700 bg-slate-900/95' : 'border-slate-200 bg-white/96'
+            isDarkMode ? 'border-slate-700/90 bg-slate-900/95' : 'border-slate-200/90 bg-white/95'
           }`}
         >
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <div className="text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400">
                 {contextMeta.label}
               </div>
-              <div className="mt-0.5 truncate text-[11px] font-semibold text-slate-700 dark:text-slate-200">
+              <div className="mt-0.5 truncate text-[12px] font-semibold text-slate-700 dark:text-slate-200">
                 {contextMeta.detail}
               </div>
             </div>
@@ -535,7 +535,7 @@ const Inspector: React.FC<InspectorProps> = ({
               <button
                 type="button"
                 onClick={handleResetNodeFields}
-                className="rounded-md border border-slate-300 px-2 py-1 text-[10px] font-semibold text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                className="rounded-md border border-slate-300 px-2.5 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
               >
                 Reset fields
               </button>
@@ -545,7 +545,7 @@ const Inspector: React.FC<InspectorProps> = ({
               <button
                 type="button"
                 onClick={handleResetEdgeFields}
-                className="rounded-md border border-slate-300 px-2 py-1 text-[10px] font-semibold text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                className="rounded-md border border-slate-300 px-2.5 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
               >
                 Reset fields
               </button>
@@ -556,8 +556,8 @@ const Inspector: React.FC<InspectorProps> = ({
         {activeTab === 'node' && !selectedNode ? (
           <div className="flex h-full min-h-56 flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 p-6 text-center opacity-70 dark:border-slate-700">
             <MousePointer2 className="mb-3 h-10 w-10 text-slate-400" />
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Select a node to edit</p>
-            <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">Select a node to edit</p>
+            <p className="mt-2 text-[12px] text-slate-500 dark:text-slate-400">
               Node details stay off-canvas so the workspace remains clean.
             </p>
           </div>
@@ -578,8 +578,8 @@ const Inspector: React.FC<InspectorProps> = ({
         {activeTab === 'edge' && !selectedEdge ? (
           <div className="flex h-full min-h-56 flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 p-6 text-center opacity-70 dark:border-slate-700">
             <MousePointer2 className="mb-3 h-10 w-10 text-slate-400" />
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Select an edge to edit</p>
-            <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">Select an edge to edit</p>
+            <p className="mt-2 text-[12px] text-slate-500 dark:text-slate-400">
               Rail, settlement, and risk fields are managed in this panel.
             </p>
           </div>

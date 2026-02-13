@@ -60,12 +60,12 @@ test('starter diagram is loaded and can be edited', async ({ page }) => {
   await expect(page.locator('div.group.absolute').filter({ hasText: 'Card Network' }).first()).toBeVisible();
 
   const duplicateButton = page.locator('button[title="Duplicate selected nodes"]');
-  await expect(duplicateButton).toBeDisabled();
+  await expect(duplicateButton).toHaveCount(0);
 
   await clickNodeByLabel(page, 'Sponsor Bank');
   await clickNodeByLabel(page, 'Processor', true);
 
-  await expect(duplicateButton).toBeEnabled();
+  await expect(duplicateButton).toBeVisible();
 
   const beforeNodeCount = await page.locator('div.group.absolute').count();
   await duplicateButton.click();
@@ -155,6 +155,44 @@ test('edge style controls respond for selected connector', async ({ page }) => {
   await midArrowButton.click();
 });
 
+test('contextual tray shows only relevant actions for current selection', async ({ page }) => {
+  const tray = page.getByTestId('selection-action-tray');
+  await expect(tray).toHaveCount(0);
+
+  await clickNodeByLabel(page, 'Sponsor Bank');
+  await expect(tray).toBeVisible();
+  await expect(page.locator('button[title="Duplicate selected nodes"]')).toBeVisible();
+  await expect(page.locator('button[title="dashed line style"]')).toHaveCount(0);
+
+  await page.locator('[data-testid="toolbar-insert-connector"]').click();
+  await expect(page.locator('button[title="dashed line style"]')).toBeVisible();
+  await expect(page.locator('button[title="Duplicate selected nodes"]')).toHaveCount(0);
+});
+
+test('mobile bottom dock uses More overflow for contextual actions', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.reload();
+  await page.waitForLoadState('networkidle');
+
+  await expect(page.getByTestId('bottom-more-actions')).toHaveCount(0);
+  await clickNodeByLabel(page, 'Sponsor Bank');
+  const moreButton = page.getByTestId('bottom-more-actions');
+  await expect(moreButton).toBeVisible();
+
+  await moreButton.click();
+  const overflowSheet = page.getByTestId('bottom-overflow-sheet');
+  await expect(overflowSheet).toBeVisible();
+  await expect(overflowSheet.locator('button[title="Duplicate selected nodes"]')).toBeVisible();
+  await expect(overflowSheet.locator('button[title="dashed line style"]')).toHaveCount(0);
+
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('bottom-overflow-sheet')).toHaveCount(0);
+
+  await page.locator('[data-testid="toolbar-insert-connector"]').click();
+  await moreButton.click();
+  await expect(page.getByTestId('bottom-overflow-sheet').locator('button[title="dashed line style"]')).toBeVisible();
+});
+
 test('export controls include JSON/SVG/PNG/PDF and trigger downloads', async ({ page }) => {
   await expect(page.getByTestId('toolbar-export-json').first()).toBeVisible();
 
@@ -180,6 +218,24 @@ test('export controls include JSON/SVG/PNG/PDF and trigger downloads', async ({ 
     page.getByTestId('toolbar-export-pdf').first().click()
   ]);
   expect((await pdfDownload.suggestedFilename()).toLowerCase()).toContain('.pdf');
+});
+
+test('primary actions labels remain readable without clipping on desktop', async ({ page }) => {
+  const strip = page.getByTestId('primary-actions-strip');
+  await expect(strip).toBeVisible();
+
+  const actionLabels = ['Restore Backup', 'Import JSON', 'Export JSON'];
+  for (const label of actionLabels) {
+    const button = strip.getByRole('button', { name: label }).first();
+    await expect(button).toBeVisible();
+    const isClipped = await button.evaluate((element) => {
+      return element.scrollWidth > element.clientWidth + 1 || element.scrollHeight > element.clientHeight + 1;
+    });
+    expect(isClipped, `${label} is clipped`).toBe(false);
+  }
+
+  const stripOverflowing = await strip.evaluate((element) => element.scrollWidth > element.clientWidth + 1);
+  expect(stripOverflowing).toBe(false);
 });
 
 test('overlay toggles affect canvas overlays and expose aria-pressed state', async ({ page }) => {
@@ -289,7 +345,16 @@ test('inspector metadata is encoded in description and survives export/import', 
 });
 
 test('level-of-detail hides node metadata and edge labels as zoom decreases', async ({ page }) => {
-  await expect(page.getByTestId('node-meta-starter-sponsor')).toBeVisible();
+  const nodeMeta = page.getByTestId('node-meta-starter-sponsor');
+  const zoomInButton = page.locator('button[title="Zoom in"]');
+  for (let i = 0; i < 14; i += 1) {
+    if ((await nodeMeta.count()) > 0) break;
+    await zoomInButton.click();
+  }
+  await expect
+    .poll(async () => nodeMeta.count())
+    .toBeGreaterThan(0);
+  await expect(nodeMeta).toBeVisible();
 
   const firstEdge = page.locator('g[data-edge-id]').first();
   const edgeId = await firstEdge.getAttribute('data-edge-id');
@@ -310,7 +375,7 @@ test('level-of-detail hides node metadata and edge labels as zoom decreases', as
   for (let i = 0; i < 5; i += 1) {
     await zoomOutButton.click();
   }
-  await expect(page.getByTestId('node-meta-starter-sponsor')).toHaveCount(0);
+  await expect(nodeMeta).toHaveCount(0);
 
   for (let i = 0; i < 3; i += 1) {
     await zoomOutButton.click();

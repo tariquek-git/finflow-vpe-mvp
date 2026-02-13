@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { getBezierPath } from '@xyflow/react';
 import { RAIL_COLORS } from '../../constants';
 import { Edge, FlowDirection, Node } from '../../types';
@@ -11,7 +11,7 @@ type DiagramEdgePathProps = {
   isSelected: boolean;
   isDimmed: boolean;
   isDarkMode: boolean;
-  zoom: number;
+  showLabelAtZoom: boolean;
   offsetIndex: number;
   totalEdges: number;
   onSelect: (id: string) => void;
@@ -32,12 +32,20 @@ const DiagramEdgePathComponent: React.FC<DiagramEdgePathProps> = ({
   isSelected,
   isDimmed,
   isDarkMode,
-  zoom,
+  showLabelAtZoom,
   offsetIndex,
   totalEdges,
   onSelect
 }) => {
   const [isHovered, setIsHovered] = useState(false);
+  const [transientPath, setTransientPath] = useState<{
+    d: string;
+    color: string;
+    dash: string;
+  } | null>(null);
+  const [transientVisible, setTransientVisible] = useState(false);
+  const previousPathRef = useRef<string | null>(null);
+  const fadeTimeoutRef = useRef<number | null>(null);
   const start = getPortPosition(source, edge.sourcePortIdx);
   const end = getPortPosition(target, edge.targetPortIdx);
 
@@ -71,7 +79,40 @@ const DiagramEdgePathComponent: React.FC<DiagramEdgePathProps> = ({
 
   const midPoint = { x: labelX, y: labelY };
   const endAngle = Math.atan2(shiftedEnd.y - shiftedStart.y, shiftedEnd.x - shiftedStart.x) * (180 / Math.PI);
-  const showLabel = zoom >= 0.45;
+  const showLabel = showLabelAtZoom;
+  const shouldRevealLabel = showLabel && (isSelected || isHovered);
+
+  useEffect(() => {
+    const previousPath = previousPathRef.current;
+    if (previousPath && previousPath !== pathD) {
+      setTransientPath({
+        d: previousPath,
+        color: strokeColor,
+        dash: strokeDash
+      });
+      setTransientVisible(true);
+      window.requestAnimationFrame(() => {
+        setTransientVisible(false);
+      });
+
+      if (fadeTimeoutRef.current !== null) {
+        window.clearTimeout(fadeTimeoutRef.current);
+      }
+      fadeTimeoutRef.current = window.setTimeout(() => {
+        setTransientPath(null);
+      }, 170);
+    }
+
+    previousPathRef.current = pathD;
+  }, [pathD, strokeColor, strokeDash]);
+
+  useEffect(() => {
+    return () => {
+      if (fadeTimeoutRef.current !== null) {
+        window.clearTimeout(fadeTimeoutRef.current);
+      }
+    };
+  }, []);
 
   return (
     <g
@@ -88,10 +129,23 @@ const DiagramEdgePathComponent: React.FC<DiagramEdgePathProps> = ({
       style={{ opacity: isDimmed ? 0.2 : 1 }}
     >
       <path d={pathD} stroke="transparent" strokeWidth="16" fill="none" />
+
+      {transientPath ? (
+        <path
+          d={transientPath.d}
+          stroke={transientPath.color}
+          strokeWidth={isSelected ? 4.6 : edge.thickness ? Math.max(2, edge.thickness) : 2.2}
+          strokeDasharray={transientPath.dash}
+          fill="none"
+          opacity={transientVisible ? 0.42 : 0}
+          className="pointer-events-none transition-opacity duration-[160ms]"
+        />
+      ) : null}
+
       <path
         d={pathD}
         stroke={strokeColor}
-        strokeWidth={isSelected ? 4.8 : edge.thickness || 2}
+        strokeWidth={isSelected ? 4.6 : edge.thickness ? Math.max(2, edge.thickness) : 2.2}
         strokeDasharray={strokeDash}
         fill="none"
         className="transition-[stroke-width,opacity] duration-150"
@@ -100,10 +154,10 @@ const DiagramEdgePathComponent: React.FC<DiagramEdgePathProps> = ({
       <path
         d={pathD}
         stroke={strokeColor}
-        strokeWidth={isSelected ? 10 : 6}
+        strokeWidth={isSelected ? 10 : 7}
         fill="none"
-        opacity={isSelected ? 0.4 : 0}
-        className="pointer-events-none transition-opacity duration-150 group-hover:opacity-20"
+        opacity={isSelected ? 0.44 : 0}
+        className="pointer-events-none transition-opacity duration-150 group-hover:opacity-30"
       />
 
       {edge.sequence !== undefined && edge.sequence > 0 ? (
@@ -130,17 +184,17 @@ const DiagramEdgePathComponent: React.FC<DiagramEdgePathProps> = ({
       {showLabel ? (
         <foreignObject
           data-testid={`edge-label-${edge.id}`}
-          x={midPoint.x - 66}
-          y={midPoint.y - (finalOffset > 0 ? 56 : -18)}
-          width="132"
-          height="46"
+          x={midPoint.x - 70}
+          y={midPoint.y - (finalOffset > 0 ? 58 : -16)}
+          width="140"
+          height="50"
           className={`pointer-events-none overflow-visible transition-opacity duration-150 ${
-            isSelected || isHovered ? 'opacity-100' : 'opacity-0'
+            shouldRevealLabel ? 'opacity-100' : 'opacity-0'
           }`}
         >
           <div className="flex flex-col items-center justify-center">
             <div
-              className={`rounded-md border px-2 py-0.5 text-[8px] font-bold uppercase tracking-tight whitespace-nowrap shadow-sm ${
+              className={`rounded-full border px-2.5 py-0.5 text-[8px] font-bold uppercase tracking-[0.06em] whitespace-nowrap shadow-sm ${
                 isDarkMode
                   ? 'border-slate-600 bg-slate-900/95 text-slate-100'
                   : 'border-slate-300 bg-white/95 text-slate-700'
@@ -149,7 +203,13 @@ const DiagramEdgePathComponent: React.FC<DiagramEdgePathProps> = ({
               {edge.label || edge.rail || getDirectionStage(edge.direction)}
               {edge.amount ? <span className="ml-1 text-emerald-500">${edge.amount}</span> : null}
             </div>
-            <div className="mt-1 text-[7px] font-semibold uppercase tracking-[0.08em] opacity-70">
+            <div
+              className={`mt-1 rounded-full border px-1.5 py-[1px] text-[7px] font-semibold uppercase tracking-[0.08em] ${
+                isDarkMode
+                  ? 'border-slate-700/90 bg-slate-900/90 text-slate-300'
+                  : 'border-slate-300/90 bg-white/90 text-slate-500'
+              }`}
+            >
               {edge.rail || getDirectionStage(edge.direction)}
             </div>
           </div>
