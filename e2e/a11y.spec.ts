@@ -26,6 +26,8 @@ test('primary controls expose accessible names', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Open layout controls' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Delete selected item' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Insert connector' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Toggle arrange controls' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Toggle edge styling controls' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Open quick start help' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Restore Backup' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Reset' })).toBeVisible();
@@ -64,4 +66,21 @@ test('toolbar help control is keyboard focusable with visible focus state', asyn
 
   expect(focusStyle.outlineStyle).not.toBe('none');
   expect(parseFloat(focusStyle.outlineWidth)).toBeGreaterThanOrEqual(1);
+});
+
+test('advanced disclosure controls are keyboard operable with aria state', async ({ page }) => {
+  const arrangeToggle = page.getByRole('button', { name: 'Toggle arrange controls' });
+  await expect(arrangeToggle).toBeVisible();
+  await expect(arrangeToggle).toHaveAttribute('aria-expanded', 'false');
+
+  await arrangeToggle.focus();
+  await page.keyboard.press('Enter');
+  await expect(arrangeToggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.getByTestId('toolbar-arrange-panel')).toBeVisible();
+
+  const edgeToggle = page.getByRole('button', { name: 'Toggle edge styling controls' });
+  await edgeToggle.focus();
+  await edgeToggle.press('Space');
+  await expect(edgeToggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.getByTestId('toolbar-edge-panel')).toBeVisible();
 });

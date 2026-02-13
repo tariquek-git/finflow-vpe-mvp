@@ -125,10 +125,10 @@ const Sidebar = React.memo<SidebarProps>(({ onAddNode, isDarkMode }) => {
       draggable
       onDragStart={(e) => onDragStartShape(e, type)}
       onClick={() => onAddNode(type)}
-      className="ff-panel-muted ff-focus group flex aspect-square cursor-grab flex-col items-center justify-center p-2 text-center transition-all duration-200 active:cursor-grabbing hover:-translate-y-[1px] hover:border-teal-500/50"
+      className="ff-surface-card ff-focus group flex aspect-square min-h-[4.5rem] cursor-grab flex-col items-center justify-center p-2 text-center transition-all duration-200 active:cursor-grabbing hover:-translate-y-[1px] hover:border-indigo-400/70"
       title={`Drag ${type} to canvas`}
     >
-      <div className="ff-panel-muted mb-1.5 flex h-9 w-9 items-center justify-center rounded-md border">
+      <div className="ff-panel-muted mb-1.5 flex h-9 w-9 items-center justify-center rounded-md border border-[color:var(--color-border-1)]">
         {ENTITY_ICONS[type]}
       </div>
       <span className="line-clamp-2 text-[10px] font-medium leading-tight text-[var(--color-text-secondary)]">
@@ -140,10 +140,10 @@ const Sidebar = React.memo<SidebarProps>(({ onAddNode, isDarkMode }) => {
   return (
     <div className="flex h-full flex-col text-[var(--color-text-primary)]">
       <div className="ff-soft-divider space-y-3 border-b px-4 py-4">
-        <div className="flex items-center justify-between">
+        <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-2">
             <Grid className="h-4 w-4 text-[var(--color-accent-1)]" />
-            <span className="ff-muted-text text-xs font-semibold uppercase tracking-[0.14em]">
+            <span className="ff-shell-section-title">
               Component Library
             </span>
           </div>
@@ -151,6 +151,9 @@ const Sidebar = React.memo<SidebarProps>(({ onAddNode, isDarkMode }) => {
             {totalVisibleBlocks}
           </span>
         </div>
+        <p className="ff-shell-section-note">
+          Drag a block onto the canvas, or click to insert near the viewport center.
+        </p>
 
         <div className="relative">
           <Search className="ff-muted-text pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2" />
@@ -158,12 +161,12 @@ const Sidebar = React.memo<SidebarProps>(({ onAddNode, isDarkMode }) => {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search blocks..."
-            className="ff-input ff-focus h-8 w-full pl-8 pr-2 text-xs outline-none"
+            className="ff-input ff-focus h-9 w-full pl-8 pr-2 text-xs outline-none"
           />
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3">
+      <div className="ff-scrollbar-thin flex-1 overflow-y-auto p-3">
         {sections.length === 0 ? (
           <div className="ff-panel-muted ff-muted-text px-3 py-4 text-center text-xs">
             No matching blocks.
@@ -171,22 +174,31 @@ const Sidebar = React.memo<SidebarProps>(({ onAddNode, isDarkMode }) => {
         ) : (
           <div className="space-y-3">
             {sections.map((section) => (
-              <div key={section.key} className="ff-panel-muted overflow-hidden border">
+              <div key={section.key} className="ff-surface-card overflow-hidden border">
                 <button
                   onClick={() => toggleSection(section.key)}
-                  className="ff-btn-ghost ff-focus flex w-full items-center justify-between px-3 py-2.5 text-[11px] font-semibold uppercase tracking-[0.12em]"
+                  aria-expanded={!!openSections[section.key]}
+                  aria-controls={`library-section-${section.key}`}
+                  className={`ff-focus flex w-full items-center justify-between px-3 py-2.5 text-[11px] font-semibold uppercase tracking-[0.12em] transition-colors ${
+                    openSections[section.key]
+                      ? 'bg-[color:var(--color-surface-3)] text-[var(--color-text-primary)]'
+                      : 'text-[var(--color-text-secondary)] hover:bg-[color:var(--color-surface-3)]'
+                  }`}
                 >
                   <span className="flex items-center gap-2">
                     {openSections[section.key] ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                     {section.title}
                   </span>
-                  <span className="ff-muted-text text-[10px] normal-case tracking-normal">
+                  <span className="ff-chip text-[10px] normal-case tracking-normal">
                     {section.filteredTypes.length}
                   </span>
                 </button>
 
                 {openSections[section.key] && (
-                  <div className="ff-soft-divider grid grid-cols-3 gap-1.5 border-t bg-[color:var(--color-surface-2)] p-2">
+                  <div
+                    id={`library-section-${section.key}`}
+                    className="ff-soft-divider grid grid-cols-3 gap-1.5 border-t bg-[color:var(--color-surface-2)] p-2"
+                  >
                     {section.filteredTypes.map(renderShapeButton)}
                   </div>
                 )}

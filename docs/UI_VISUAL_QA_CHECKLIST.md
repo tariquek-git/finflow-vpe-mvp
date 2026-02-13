@@ -6,6 +6,8 @@ Use this checklist for manual sign-off after UI refresh. Execute in both light a
 - [ ] Header and library render as detached glass floating panels (`16px` radius, blur, soft shadow).
 - [ ] Header hierarchy is clear: product identity, status chips, and actions are readable at a glance.
 - [ ] Primary Actions strip clearly separates primary export action from secondary recovery actions.
+- [ ] Bottom toolbar defaults to clarity-first core groups (`Tool`, `Insert`, `Canvas`) with `Arrange` and `Edge` collapsed.
+- [ ] Disclosure controls (`Toggle arrange controls`, `Toggle edge styling controls`) are visible, readable, and keyboard operable.
 - [ ] Sidebar sections are legible and scannable with clear collapsed/expanded contrast.
 - [ ] Inspector forms have consistent spacing, labels, and focus visibility.
 - [ ] Canvas controls remain discoverable and do not visually clash with canvas content.
@@ -15,6 +17,7 @@ Use this checklist for manual sign-off after UI refresh. Execute in both light a
 - [ ] Primary actions are visible without icon-only ambiguity.
 - [ ] Toolbar controls have comfortable tap targets (>= 40px).
 - [ ] Quick Start and Help remain usable on narrow screens.
+- [ ] Bottom toolbar advanced groups open as compact stacked panels with no clipped labels.
 - [ ] Side panels open/close smoothly without overlap artifacts.
 - [ ] Floating toolbar remains readable and unclipped at 390px viewport width.
 
@@ -30,6 +33,7 @@ Use this checklist for manual sign-off after UI refresh. Execute in both light a
 - [ ] Backup status indicator updates and remains accurate after reload.
 - [ ] Quick Start dismiss/reopen behavior is unchanged.
 - [ ] Existing e2e selectors and accessible button names remain intact.
+- [ ] Bottom toolbar shell remains non-blocking: canvas interactions still pass through outside interactive controls.
 - [ ] Smart alignment guides appear when nodes align on drag.
 - [ ] Ctrl/Cmd + scroll zoom remains clamped between 50% and 200%.
 - [ ] Active edge flow particles appear only for active flows and respect reduced motion.

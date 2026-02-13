@@ -54,3 +54,32 @@ All commands passed with exit code `0`:
 - Pilot runbook prepared at `docs/LOCAL_PILOT_RUNBOOK.md`.
 - Structured session log template prepared at `docs/LOCAL_PILOT_SESSION_LOG.csv`.
 - Real-user pilot sessions are pending (not executed in this environment).
+
+## Premium Polish Sprint Update (v0.1.3-local.1 candidate)
+- Working branch: `codex/ui-premium-polish-sprint`
+- Base branch: `codex/vpe-interaction-mechanics`
+- Scope: clarity-first bottom toolbar IA polish + shell consistency (no behavior/API/storage changes)
+
+### QA Evidence (Premium Polish)
+- Run timestamp (UTC): `2026-02-13 06:10:46Z` to `2026-02-13 06:12:58Z`
+- Run timestamp (local): `2026-02-13 01:10:46 EST` to `2026-02-13 01:12:58 EST`
+
+All required commands passed with exit code `0`:
+1. `npm run doctor`
+2. `npm run build`
+3. `npm run test:smoke`
+4. `npm run test:mvp`
+5. `npm run test:mvp:onboarding`
+6. `npm run test:mvp:feedback`
+7. `npm run test:qa` (35 passed)
+
+### Visual Sign-off Notes (Premium Polish)
+- Bottom toolbar now defaults to core controls (`Tool`, `Insert`, `Canvas`) with progressive disclosure for advanced groups (`Arrange`, `Edge`).
+- Disclosure controls are keyboard operable and expose correct `aria-expanded`/`aria-controls` state.
+- Mobile 390px toolbar no longer clips advanced labels; stacked advanced panels render cleanly.
+- Canvas hit-testing remains available outside interactive toolbar controls.
+- New baselines captured in `docs/ui-baseline/after/`:
+  - `after-bottom-toolbar-desktop-default.png`
+  - `after-bottom-toolbar-desktop-advanced.png`
+  - `after-bottom-toolbar-mobile-default.png`
+  - `after-bottom-toolbar-mobile-advanced.png`

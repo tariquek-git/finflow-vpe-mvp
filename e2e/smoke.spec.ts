@@ -15,6 +15,10 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('connector click inserts then delete removes it', async ({ page }) => {
+  const edgeToggle = page.getByRole('button', { name: 'Toggle edge styling controls' });
+  await edgeToggle.click();
+  await expect(edgeToggle).toHaveAttribute('aria-expanded', 'true');
+
   const solidStyleButton = page.locator('button[title="solid line style"]');
   await expect(solidStyleButton).toBeDisabled();
 

@@ -51,6 +51,9 @@ jobs:
       - name: MVP feedback tests
         run: npm run test:mvp:feedback
 
+      - name: MVP empty state tests
+        run: npm run test:mvp:empty-state
+
       - name: MVP mobile primary actions tests
         run: npm run test:mvp:mobile-actions
 
@@ -63,8 +66,14 @@ jobs:
       - name: VPE canvas mechanics tests
         run: npm run test:vpe:canvas-mechanics
 
+      - name: VPE bottom toolbar tests
+        run: npm run test:vpe:bottom-toolbar
+
       - name: VPE node context tests
         run: npm run test:vpe:node-context
+
+      - name: VPE validation warnings tests
+        run: npm run test:vpe:validation
 
       - name: Full QA regression
         run: npm run test:qa

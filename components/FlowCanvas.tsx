@@ -40,6 +40,7 @@ interface FlowCanvasProps {
   showSwimlanes: boolean;
   swimlaneLabels: string[];
   gridMode: 'none' | 'lines' | 'dots';
+  highlightedEdgeId: string | null;
 }
 
 const NODE_WIDTH = 180;
@@ -53,6 +54,8 @@ const GRID_EXTENT = 12000;
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 2.0;
 const ALIGN_THRESHOLD = 6;
+const VIEWPORT_CULL_PADDING = 320;
+const EDGE_CULL_PADDING = 260;
 
 const isEditableTarget = (target: EventTarget | null): target is HTMLElement => {
   if (!(target instanceof HTMLElement)) return false;
@@ -131,6 +134,44 @@ const getNodeDimensions = (node: Node) => {
   };
 };
 
+type WorldBounds = {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+};
+
+const nodeIntersectsBounds = (node: Node, bounds: WorldBounds): boolean => {
+  const { width, height } = getNodeDimensions(node);
+  const nodeMinX = node.position.x;
+  const nodeMaxX = node.position.x + width;
+  const nodeMinY = node.position.y;
+  const nodeMaxY = node.position.y + height;
+  return !(
+    nodeMaxX < bounds.minX ||
+    nodeMinX > bounds.maxX ||
+    nodeMaxY < bounds.minY ||
+    nodeMinY > bounds.maxY
+  );
+};
+
+const segmentIntersectsBounds = (
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  bounds: WorldBounds,
+  padding = 0
+) => {
+  const minX = bounds.minX - padding;
+  const minY = bounds.minY - padding;
+  const maxX = bounds.maxX + padding;
+  const maxY = bounds.maxY + padding;
+  const segMinX = Math.min(start.x, end.x);
+  const segMinY = Math.min(start.y, end.y);
+  const segMaxX = Math.max(start.x, end.x);
+  const segMaxY = Math.max(start.y, end.y);
+  return !(segMaxX < minX || segMinX > maxX || segMaxY < minY || segMinY > maxY);
+};
+
 const DiagramEdge = React.memo(
   ({
     edge,
@@ -140,7 +181,8 @@ const DiagramEdge = React.memo(
     isDarkMode,
     onSelect,
     offsetIndex,
-    totalEdges
+    totalEdges,
+    isHighlighted
   }: {
     edge: Edge;
     source: Node;
@@ -150,6 +192,7 @@ const DiagramEdge = React.memo(
     onSelect: (id: string) => void;
     offsetIndex: number;
     totalEdges: number;
+    isHighlighted: boolean;
   }) => {
     const start = getPortPosition(source, edge.sourcePortIdx);
     const end = getPortPosition(target, edge.targetPortIdx);
@@ -215,7 +258,8 @@ const DiagramEdge = React.memo(
           strokeWidth={isSelected ? 4 : edge.thickness || 2}
           strokeDasharray={strokeDash}
           fill="none"
-          className="transition-all duration-200 ease-out"
+          vectorEffect="non-scaling-stroke"
+          className={`transition-all duration-200 ease-out ${isHighlighted ? 'ff-edge-connect-flash' : ''}`}
         />
         {isActiveFlow && (
           <path
@@ -223,6 +267,7 @@ const DiagramEdge = React.memo(
             stroke={isDarkMode ? 'rgba(255,255,255,0.8)' : 'rgba(79,70,229,0.58)'}
             strokeWidth={2}
             fill="none"
+            vectorEffect="non-scaling-stroke"
             className="ff-edge-flow pointer-events-none"
           />
         )}
@@ -287,7 +332,8 @@ const DiagramNode = React.memo(
     onPortClick,
     showPorts,
     connectHighlight,
-    isHighlighted
+    isHighlighted,
+    zoom
   }: {
     node: Node;
     meta: NodeVisualMeta;
@@ -299,7 +345,10 @@ const DiagramNode = React.memo(
     showPorts: boolean;
     connectHighlight: boolean;
     isHighlighted: boolean;
+    zoom: number;
   }) => {
+    const borderWidth = Math.min(2, Math.max(0.5, 1 / Math.max(zoom, 0.001)));
+
     if (node.type === EntityType.ANCHOR) {
       return (
         <div
@@ -312,7 +361,14 @@ const DiagramNode = React.memo(
                   ? 'border-slate-500 bg-slate-600'
                   : 'border-slate-400 bg-slate-300'
           }`}
-          style={{ left: node.position.x, top: node.position.y, width: ANCHOR_SIZE, height: ANCHOR_SIZE, zIndex: 100 }}
+          style={{
+            left: node.position.x,
+            top: node.position.y,
+            width: ANCHOR_SIZE,
+            height: ANCHOR_SIZE,
+            zIndex: 100,
+            borderWidth: `${borderWidth}px`
+          }}
           onMouseDown={(e) => onMouseDown(e, node.id)}
         />
       );
@@ -340,7 +396,8 @@ const DiagramNode = React.memo(
             backgroundColor: isDarkMode ? '#0f172a' : '#ffffff',
             borderColor: isDarkMode ? '#475569' : '#e2e8f0',
             color: isDarkMode ? '#e2e8f0' : '#0f172a',
-            zIndex: isSelected ? 99 : 10
+            zIndex: isSelected ? 99 : 10,
+            borderWidth: `${borderWidth}px`
           }}
           onMouseDown={(e) => onMouseDown(e, node.id)}
           onClick={onClick}
@@ -364,7 +421,8 @@ const DiagramNode = React.memo(
           top: node.position.y,
           width: node.width || NODE_WIDTH,
           height: node.height || NODE_HEIGHT,
-          zIndex: isSelected ? 99 : 10
+          zIndex: isSelected ? 99 : 10,
+          borderWidth: `${borderWidth}px`
         }}
         onMouseDown={(e) => onMouseDown(e, node.id)}
         onClick={onClick}
@@ -397,13 +455,13 @@ const DiagramNode = React.memo(
               </div>
             </div>
           </div>
-          <div className="mt-1 flex flex-wrap items-center gap-1">
+          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">
             {meta.tags.slice(0, 2).map((tag) => (
-              <span key={tag} className="ff-smart-card-meta">
+              <span key={tag} className="ff-smart-card-meta max-w-full">
                 {tag}
               </span>
             ))}
-            {meta.tags.length === 0 && <span className="ff-smart-card-meta">Ready</span>}
+            {meta.tags.length === 0 && <span className="ff-smart-card-meta max-w-full">Ready</span>}
           </div>
           <div className="mt-2">
             <div className="ff-smart-card-status" style={{ backgroundColor: meta.statusColor }} />
@@ -417,23 +475,25 @@ const DiagramNode = React.memo(
               <button
                 key={idx}
                 data-testid={`node-handle-${label.toLowerCase()}`}
-                className={`absolute z-50 h-4 w-4 rounded-full border-2 border-white bg-indigo-500 shadow-sm transition-all duration-150 hover:scale-110 dark:border-slate-900 ${
+                className={`absolute z-50 flex h-10 w-10 items-center justify-center rounded-full border border-transparent bg-indigo-500/0 transition-all duration-150 hover:scale-110 ${
                   isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
                 }`}
                 style={
                   idx === 0
-                    ? { left: '50%', top: -8, transform: 'translateX(-50%)' }
+                    ? { left: '50%', top: -20, transform: 'translateX(-50%)' }
                     : idx === 1
-                      ? { right: -8, top: '50%', transform: 'translateY(-50%)' }
+                      ? { right: -20, top: '50%', transform: 'translateY(-50%)' }
                       : idx === 2
-                        ? { left: '50%', bottom: -8, transform: 'translateX(-50%)' }
-                        : { left: -8, top: '50%', transform: 'translateY(-50%)' }
+                        ? { left: '50%', bottom: -20, transform: 'translateX(-50%)' }
+                        : { left: -20, top: '50%', transform: 'translateY(-50%)' }
                 }
                 onMouseDown={(e) => { e.stopPropagation(); }}
                 onClick={(e) => { e.stopPropagation(); onPortClick(e, node.id, idx); }}
                 title={`Connection handle ${label}`}
                 aria-label={`Connection handle ${label}`}
-              />
+              >
+                <span className="pointer-events-none inline-block h-4 w-4 rounded-full border-2 border-white bg-indigo-500 shadow-sm dark:border-slate-900" />
+              </button>
             );
           })}
       </div>
@@ -467,7 +527,8 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
   onViewportChange,
   showSwimlanes,
   swimlaneLabels,
-  gridMode
+  gridMode,
+  highlightedEdgeId
 }) => {
   const [draggingNodes, setDraggingNodes] = useState<{
     ids: string[];
@@ -485,6 +546,7 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
   const [panningState, setPanningState] = useState<{ startX: number; startY: number; baseX: number; baseY: number } | null>(null);
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const [pointerWorld, setPointerWorld] = useState<Position | null>(null);
+  const [canvasSize, setCanvasSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
 
   const screenToWorld = useCallback((clientX: number, clientY: number) => {
@@ -517,6 +579,55 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
   const visibleNodes = useMemo(
     () => nodes.filter((node) => !node.isConnectorHandle || activeConnectorHandleIds.includes(node.id)),
     [nodes, activeConnectorHandleIds]
+  );
+  const nodeById = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
+
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element) return;
+    const updateSize = () =>
+      setCanvasSize({
+        width: element.clientWidth,
+        height: element.clientHeight
+      });
+    updateSize();
+
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(updateSize) : null;
+    observer?.observe(element);
+    window.addEventListener('resize', updateSize);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', updateSize);
+    };
+  }, []);
+
+  const viewportBounds = useMemo<WorldBounds>(() => {
+    const width = canvasSize.width || window.innerWidth;
+    const height = canvasSize.height || window.innerHeight;
+    const minX = -viewport.x / viewport.zoom - VIEWPORT_CULL_PADDING;
+    const minY = -viewport.y / viewport.zoom - VIEWPORT_CULL_PADDING;
+    const maxX = minX + width / viewport.zoom + VIEWPORT_CULL_PADDING * 2;
+    const maxY = minY + height / viewport.zoom + VIEWPORT_CULL_PADDING * 2;
+    return { minX, minY, maxX, maxY };
+  }, [canvasSize.height, canvasSize.width, viewport.x, viewport.y, viewport.zoom]);
+
+  const renderedNodes = useMemo(
+    () => visibleNodes.filter((node) => nodeIntersectsBounds(node, viewportBounds)),
+    [visibleNodes, viewportBounds]
+  );
+  const renderedNodeIds = useMemo(() => new Set(renderedNodes.map((node) => node.id)), [renderedNodes]);
+  const renderedEdges = useMemo(
+    () =>
+      edges.filter((edge) => {
+        const source = nodeById.get(edge.sourceId);
+        const target = nodeById.get(edge.targetId);
+        if (!source || !target) return false;
+        if (renderedNodeIds.has(source.id) || renderedNodeIds.has(target.id)) return true;
+        const start = getPortPosition(source, edge.sourcePortIdx);
+        const end = getPortPosition(target, edge.targetPortIdx);
+        return segmentIntersectsBounds(start, end, viewportBounds, EDGE_CULL_PADDING);
+      }),
+    [edges, nodeById, renderedNodeIds, viewportBounds]
   );
 
   const nodeVisualMeta = useMemo<Record<string, NodeVisualMeta>>(() => {
@@ -639,7 +750,7 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
       const maxX = Math.max(nextMarquee.start.x, nextMarquee.current.x);
       const maxY = Math.max(nextMarquee.start.y, nextMarquee.current.y);
 
-      const marqueeSelected = visibleNodes
+      const marqueeSelected = renderedNodes
         .filter((node) => {
           const { width, height } = getNodeDimensions(node);
           const nodeMinX = node.position.x;
@@ -857,7 +968,7 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
   const gridPatternSize = gridMode === 'dots' ? DOT_GRID_SIZE : LINE_GRID_SIZE;
   const selectedContextNode =
     selectedNodeIds.length === 1
-      ? visibleNodes.find((node) => node.id === selectedNodeIds[0]) || null
+      ? renderedNodes.find((node) => node.id === selectedNodeIds[0]) || null
       : null;
   const showNodeContextToolbar =
     activeTool === 'select' &&
@@ -961,6 +1072,7 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
                   strokeWidth={1}
                   strokeDasharray="4,4"
                   opacity={0.9}
+                  vectorEffect="non-scaling-stroke"
                 />
               )}
               {alignmentGuide.y !== null && (
@@ -974,6 +1086,7 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
                   strokeWidth={1}
                   strokeDasharray="4,4"
                   opacity={0.9}
+                  vectorEffect="non-scaling-stroke"
                 />
               )}
             </g>
@@ -988,13 +1101,14 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
               strokeWidth={d.width}
               strokeLinecap="round"
               strokeLinejoin="round"
+              vectorEffect="non-scaling-stroke"
               className="pointer-events-none"
             />
           ))}
 
-          {edges.map((edge) => {
-            const source = nodes.find((n) => n.id === edge.sourceId);
-            const target = nodes.find((n) => n.id === edge.targetId);
+          {renderedEdges.map((edge) => {
+            const source = nodeById.get(edge.sourceId);
+            const target = nodeById.get(edge.targetId);
             if (!source || !target) return null;
             const key = [edge.sourceId, edge.targetId].sort().join('-');
             return (
@@ -1008,6 +1122,7 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
                 onSelect={(id) => { onSelectEdge(id); onOpenInspector(); }}
                 offsetIndex={edgeGroups[key].indexOf(edge.id)}
                 totalEdges={edgeGroups[key].length}
+                isHighlighted={highlightedEdgeId === edge.id}
               />
             );
           })}
@@ -1034,13 +1149,14 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
                 stroke={isDarkMode ? '#60a5fa' : '#0d99ff'}
                 strokeWidth={2}
                 strokeDasharray="6,4"
+                vectorEffect="non-scaling-stroke"
                 className="pointer-events-none"
               />
             );
           })()}
         </svg>
 
-        {visibleNodes.map((node) => (
+        {renderedNodes.map((node) => (
           <DiagramNode
             key={node.id}
             node={node}
@@ -1056,6 +1172,7 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
             showPorts={showPorts && activeTool === 'draw'}
             connectHighlight={pendingConnection?.nodeId === node.id}
             isHighlighted={highlightedNodeId === node.id}
+            zoom={viewport.zoom}
             onMouseDown={(e, id) => {
               if (e.button !== 0 || isSpacePressed) return;
               e.stopPropagation();

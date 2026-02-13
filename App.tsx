@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import {
   Trash2,
   Download,
@@ -14,6 +14,7 @@ import {
   Sparkles,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   MousePointer2,
   Pencil,
   Type as TypeIcon,
@@ -226,6 +227,53 @@ const hasDirectConnection = (allEdges: Edge[], nodeAId: string, nodeBId: string)
       (edge.sourceId === nodeBId && edge.targetId === nodeAId)
   );
 
+const getDiagramValidationWarnings = (snapshot: DiagramSnapshot): string[] => {
+  const warnings: string[] = [];
+  const validationNodes = snapshot.nodes.filter(
+    (node) => !node.isConnectorHandle && node.type !== EntityType.TEXT_BOX
+  );
+  if (validationNodes.length === 0) return warnings;
+
+  const nodeIds = new Set(validationNodes.map((node) => node.id));
+  const linkedNodeIds = new Set<string>();
+  const adjacency = new Map<string, string[]>();
+  validationNodes.forEach((node) => adjacency.set(node.id, []));
+
+  snapshot.edges.forEach((edge) => {
+    if (!nodeIds.has(edge.sourceId) || !nodeIds.has(edge.targetId)) return;
+    adjacency.get(edge.sourceId)?.push(edge.targetId);
+    linkedNodeIds.add(edge.sourceId);
+    linkedNodeIds.add(edge.targetId);
+  });
+
+  const orphanCount = validationNodes.filter((node) => !linkedNodeIds.has(node.id)).length;
+  if (orphanCount > 0) {
+    warnings.push(`Validation warning: ${orphanCount} unconnected node${orphanCount === 1 ? '' : 's'} in export.`);
+  }
+
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+  let hasCycle = false;
+  const visit = (nodeId: string) => {
+    if (hasCycle || visited.has(nodeId)) return;
+    if (visiting.has(nodeId)) {
+      hasCycle = true;
+      return;
+    }
+    visiting.add(nodeId);
+    const nextIds = adjacency.get(nodeId) || [];
+    nextIds.forEach(visit);
+    visiting.delete(nodeId);
+    visited.add(nodeId);
+  };
+  validationNodes.forEach((node) => visit(node.id));
+  if (hasCycle) {
+    warnings.push('Validation warning: Circular loop detected in flow graph.');
+  }
+
+  return warnings;
+};
+
 type EditMergeState = { id: string | null; at: number };
 type ToastTone = 'info' | 'success' | 'warning' | 'error';
 type ToastMessage = {
@@ -312,11 +360,11 @@ const DraggableConnectorButton: React.FC<{
       onDragStart={onNativeDragStart}
       onClick={onClick}
       aria-label="Insert connector"
-      className="ff-btn-secondary ff-focus flex h-8 cursor-grab items-center gap-1 border border-transparent px-2.5 text-xs font-medium active:cursor-grabbing"
+      className="ff-btn-secondary ff-focus ff-toolbar-btn flex cursor-grab items-center gap-1 border border-transparent px-2.5 text-xs font-medium active:cursor-grabbing"
       title="Click to insert connector at center, or drag into canvas"
     >
       <ArrowRight className="h-4 w-4" />
-      <span className="hidden sm:inline">Connector</span>
+      <span>Connector</span>
     </button>
   );
 };
@@ -357,6 +405,8 @@ const App: React.FC = () => {
   const toggleLayoutPanel = useUIStore((state) => state.toggleLayoutPanel);
   const activeTool = useUIStore((state) => state.activeTool);
   const setActiveTool = useUIStore((state) => state.setActiveTool);
+  const [isArrangeControlsOpen, setIsArrangeControlsOpen] = useState(false);
+  const [isEdgeControlsOpen, setIsEdgeControlsOpen] = useState(false);
   const [aiPrompt, setAiPrompt] = useState('');
   const [isAILoading, setIsAILoading] = useState(false);
   const [isQuickStartVisible, setIsQuickStartVisible] = useState(() => {
@@ -369,6 +419,7 @@ const App: React.FC = () => {
   const [hasRecoverySnapshot, setHasRecoverySnapshot] = useState(false);
   const [recoveryLastSavedAt, setRecoveryLastSavedAt] = useState<string | null>(null);
   const [activeDropNodeId, setActiveDropNodeId] = useState<string | null>(null);
+  const [recentlyConnectedEdgeId, setRecentlyConnectedEdgeId] = useState<string | null>(null);
   
   // Link Attributes State
   const [activeEdgeStyle, setActiveEdgeStyle] = useState<'solid' | 'dashed' | 'dotted'>('solid');
@@ -383,9 +434,17 @@ const App: React.FC = () => {
   const lastEdgeEditRef = useRef<EditMergeState>({ id: null, at: 0 });
   const lastNudgeRef = useRef<EditMergeState>({ id: null, at: 0 });
   const hasLoadedFromStorage = useRef(false);
-  const saveDiagramTimeoutRef = useRef<number | null>(null);
   const saveLayoutTimeoutRef = useRef<number | null>(null);
   const dropAnimationTimeoutRef = useRef<number | null>(null);
+  const edgeHighlightTimeoutRef = useRef<number | null>(null);
+  const latestSnapshotRef = useRef<DiagramSnapshot>(STARTER_SNAPSHOT);
+  const latestLayoutRef = useRef<LayoutSettings>({
+    showSwimlanes,
+    swimlaneLabels,
+    gridMode,
+    isDarkMode,
+    showPorts
+  });
   const wasMobileViewportRef = useRef(isMobileViewport);
   // --- BASE UTILITIES ---
 
@@ -435,6 +494,9 @@ const App: React.FC = () => {
       if (dropAnimationTimeoutRef.current !== null) {
         window.clearTimeout(dropAnimationTimeoutRef.current);
       }
+      if (edgeHighlightTimeoutRef.current !== null) {
+        window.clearTimeout(edgeHighlightTimeoutRef.current);
+      }
     };
   }, []);
 
@@ -450,6 +512,20 @@ const App: React.FC = () => {
     }),
     [showSwimlanes, swimlaneLabels, gridMode, isDarkMode, showPorts]
   );
+
+  const flushAutosaveNow = useCallback(() => {
+    if (!hasLoadedFromStorage.current) return;
+    if (saveLayoutTimeoutRef.current !== null) {
+      window.clearTimeout(saveLayoutTimeoutRef.current);
+      saveLayoutTimeoutRef.current = null;
+    }
+
+    const layoutSaved = persistLayoutToStorage(LAYOUT_STORAGE_KEY, latestLayoutRef.current);
+
+    if (!layoutSaved) {
+      setStorageWarning('Layout autosave is unavailable. Your view preferences may not persist.');
+    }
+  }, []);
 
   const applyLayoutSettings = useCallback(
     (layout: Partial<LayoutSettings>) => {
@@ -534,23 +610,39 @@ const App: React.FC = () => {
     hasLoadedFromStorage.current = true;
   }, [applyLayoutSettings, applySnapshot]);
 
+  useLayoutEffect(() => {
+    latestSnapshotRef.current = getCurrentSnapshot();
+  }, [getCurrentSnapshot]);
+
+  useLayoutEffect(() => {
+    latestLayoutRef.current = getCurrentLayout();
+  }, [getCurrentLayout]);
+
   useEffect(() => {
-    if (!hasLoadedFromStorage.current) return;
-    const current = getCurrentSnapshot();
-    if (saveDiagramTimeoutRef.current !== null) {
-      window.clearTimeout(saveDiagramTimeoutRef.current);
-    }
-    saveDiagramTimeoutRef.current = window.setTimeout(() => {
-      const saved = persistDiagramToStorage(STORAGE_KEY, current);
-      if (!saved) {
-        setStorageWarning('Autosave is unavailable. Your changes may not persist after refresh.');
-      }
-    }, 180);
-    return () => {
-      if (saveDiagramTimeoutRef.current !== null) {
-        window.clearTimeout(saveDiagramTimeoutRef.current);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        flushAutosaveNow();
       }
     };
+
+    window.addEventListener('beforeunload', flushAutosaveNow);
+    window.addEventListener('pagehide', flushAutosaveNow);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('beforeunload', flushAutosaveNow);
+      window.removeEventListener('pagehide', flushAutosaveNow);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [flushAutosaveNow]);
+
+  useLayoutEffect(() => {
+    if (!hasLoadedFromStorage.current) return;
+    const current = getCurrentSnapshot();
+    latestSnapshotRef.current = current;
+    const saved = persistDiagramToStorage(STORAGE_KEY, current);
+    if (!saved) {
+      setStorageWarning('Autosave is unavailable. Your changes may not persist after refresh.');
+    }
   }, [nodes, edges, drawings, getCurrentSnapshot]);
 
   useEffect(() => {
@@ -702,6 +794,13 @@ const App: React.FC = () => {
     pushHistory();
     setEdges((prev) => [...prev, newEdge]);
     handleSelectEdge(newEdgeId);
+    setRecentlyConnectedEdgeId(newEdgeId);
+    if (edgeHighlightTimeoutRef.current !== null) {
+      window.clearTimeout(edgeHighlightTimeoutRef.current);
+    }
+    edgeHighlightTimeoutRef.current = window.setTimeout(() => {
+      setRecentlyConnectedEdgeId(null);
+    }, 780);
   }, [activeEdgeStyle, activeArrowConfig, pushHistory, handleSelectEdge]);
 
   const connectNodesWithAutoPorts = useCallback(
@@ -1153,6 +1252,7 @@ const App: React.FC = () => {
         if (!parsed) {
           throw new Error('Unsupported file format.');
         }
+        const validationWarnings = getDiagramValidationWarnings(parsed.diagram);
 
         saveRecoverySnapshot();
         pushHistory();
@@ -1165,6 +1265,7 @@ const App: React.FC = () => {
           applyLayoutSettings(parsed.layout);
         }
         pushToast('Diagram imported successfully. Backup saved.', 'success');
+        validationWarnings.forEach((warning) => pushToast(warning, 'warning'));
       } catch (error) {
         console.error('Import failed:', error);
         pushToast('Import failed. Use a valid FinFlow JSON export file.', 'error');
@@ -1176,7 +1277,11 @@ const App: React.FC = () => {
   );
 
   const handleExportDiagram = useCallback(() => {
-    const payload: ExportPayloadV2 = createExportPayload(getCurrentSnapshot(), getCurrentLayout());
+    const snapshot = getCurrentSnapshot();
+    const layout = getCurrentLayout();
+    const validationWarnings = getDiagramValidationWarnings(snapshot);
+    validationWarnings.forEach((warning) => pushToast(warning, 'warning'));
+    const payload: ExportPayloadV2 = createExportPayload(snapshot, layout);
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1426,6 +1531,15 @@ const App: React.FC = () => {
       : hasRecoverySnapshot
         ? 'Backup: Available'
         : 'Backup: Not yet created';
+  const handleDisclosureToggleKeyDown = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+    toggle: React.Dispatch<React.SetStateAction<boolean>>
+  ) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      toggle((prev) => !prev);
+    }
+  };
 
   return (
       <div className={`finflow-app-shell ff-shell flex h-screen flex-col overflow-hidden ${isDarkMode ? 'dark' : ''}`}>
@@ -1754,6 +1868,7 @@ const App: React.FC = () => {
               gridMode={gridMode}
               viewport={viewport}
               onViewportChange={setViewport}
+              highlightedEdgeId={recentlyConnectedEdgeId}
             />
             <div className="ff-vignette" />
 
@@ -1787,6 +1902,39 @@ const App: React.FC = () => {
                   </ol>
                 </div>
               )}
+              {nodes.length === 0 && !isQuickStartVisible && (
+                <div
+                  data-testid="empty-canvas-state"
+                  className="ff-panel ff-elevated ff-motion-in mb-2 w-[min(24rem,calc(100vw-1rem))] border-l-4 border-l-indigo-500 px-3 py-3"
+                >
+                  <h2 className="text-xs font-bold uppercase tracking-[0.14em] text-indigo-600 dark:text-indigo-300">
+                    Start Here
+                  </h2>
+                  <p className="mt-1 text-[11px] leading-relaxed">
+                    Add your first component, then connect and export your flow.
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button
+                      onClick={() => setIsSidebarOpen(true)}
+                      className="ff-btn-secondary ff-focus px-2.5 py-1 text-[10px]"
+                    >
+                      Open Library
+                    </button>
+                    <button
+                      onClick={openQuickStart}
+                      className="ff-btn-secondary ff-focus px-2.5 py-1 text-[10px]"
+                    >
+                      Quick Start
+                    </button>
+                    <button
+                      onClick={() => importInputRef.current?.click()}
+                      className="ff-btn-secondary ff-focus px-2.5 py-1 text-[10px]"
+                    >
+                      Import JSON
+                    </button>
+                  </div>
+                </div>
+              )}
               <div
                 className="ff-panel-muted ff-muted-text pointer-events-none hidden px-3 py-2 text-[11px] font-medium md:block"
               >
@@ -1795,13 +1943,13 @@ const App: React.FC = () => {
             </div>
 
             <div
-              className="absolute left-1/2 z-30 w-full max-w-6xl -translate-x-1/2 px-2 md:px-4"
+              className="pointer-events-none absolute left-1/2 z-30 w-full max-w-6xl -translate-x-1/2 px-2 md:px-4"
               style={{ bottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
             >
-              <div className="flex flex-col items-center gap-2">
+              <div className="flex max-h-[46vh] flex-col items-center gap-2 overflow-y-auto overscroll-contain pb-1 md:max-h-none md:overflow-visible">
                 {isLayoutPanelOpen && (
                   <div
-                    className="ff-panel surface-ring ff-motion-in w-full max-w-4xl p-3"
+                    className="ff-panel surface-ring ff-motion-in pointer-events-auto w-full max-w-4xl p-3"
                   >
                     <div className="mb-3 flex items-center justify-between">
                       <div>
@@ -1890,15 +2038,16 @@ const App: React.FC = () => {
                   </div>
                 )}
 
-                <div className="ff-panel surface-ring ff-motion-in w-full px-3 py-2">
-                  <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="flex items-start gap-2 overflow-x-auto pb-1 lg:flex-wrap lg:overflow-visible">
-                      <div className="shrink-0 space-y-1">
-                        <div className="px-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
-                          Tool
-                        </div>
+                <div
+                  data-testid="bottom-toolbar-panel"
+                  className="ff-panel surface-ring ff-motion-in pointer-events-auto w-full px-3 py-2"
+                >
+                  <div className="ff-bottom-toolbar">
+                    <div className="ff-bottom-toolbar-row">
+                      <div className="ff-toolbar-cluster shrink-0 space-y-1">
+                        <div className="ff-toolbar-cluster-label">Tool</div>
                         <div
-                          className={`flex items-center gap-1 rounded-md border p-1 ${
+                          className={`ff-toolbar-control-box ${
                             isDarkMode
                               ? 'border-slate-700 bg-slate-900'
                               : 'border-slate-300 bg-slate-50'
@@ -1907,54 +2056,52 @@ const App: React.FC = () => {
                           <button
                             onClick={() => setActiveTool('select')}
                             aria-pressed={activeTool === 'select'}
-                            className={`flex h-8 items-center gap-1 rounded-md px-2.5 text-xs font-medium ${
+                            className={`ff-toolbar-btn flex items-center gap-1.5 px-2.5 text-xs font-medium ${
                               activeTool === 'select'
-                                ? 'bg-blue-600 text-white shadow-sm'
+                                ? 'bg-indigo-600 text-white shadow-sm'
                                 : 'text-slate-600 hover:bg-white dark:text-slate-300 dark:hover:bg-slate-700'
                             }`}
                             title="Select and move"
                             aria-label="Select tool"
                           >
                             <MousePointer2 className="h-4 w-4" />
-                            <span className="hidden sm:inline">Select</span>
+                            <span>Select</span>
                           </button>
                           <button
                             onClick={() => setActiveTool('draw')}
                             aria-pressed={activeTool === 'draw'}
-                            className={`flex h-8 items-center gap-1 rounded-md px-2.5 text-xs font-medium ${
+                            className={`ff-toolbar-btn flex items-center gap-1.5 px-2.5 text-xs font-medium ${
                               activeTool === 'draw'
-                                ? 'bg-blue-600 text-white shadow-sm'
+                                ? 'bg-indigo-600 text-white shadow-sm'
                                 : 'text-slate-600 hover:bg-white dark:text-slate-300 dark:hover:bg-slate-700'
                             }`}
                             title="Click ports to connect nodes"
                             aria-label="Connect tool"
                           >
                             <Pencil className="h-4 w-4" />
-                            <span className="hidden sm:inline">Connect</span>
+                            <span>Connect</span>
                           </button>
                           <button
                             onClick={() => setActiveTool('text')}
                             aria-pressed={activeTool === 'text'}
-                            className={`flex h-8 items-center gap-1 rounded-md px-2.5 text-xs font-medium ${
+                            className={`ff-toolbar-btn flex items-center gap-1.5 px-2.5 text-xs font-medium ${
                               activeTool === 'text'
-                                ? 'bg-blue-600 text-white shadow-sm'
+                                ? 'bg-indigo-600 text-white shadow-sm'
                                 : 'text-slate-600 hover:bg-white dark:text-slate-300 dark:hover:bg-slate-700'
                             }`}
                             title="Place text box"
                             aria-label="Text tool"
                           >
                             <TypeIcon className="h-4 w-4" />
-                            <span className="hidden sm:inline">Text</span>
+                            <span>Text</span>
                           </button>
                         </div>
                       </div>
 
-                      <div className="shrink-0 space-y-1">
-                        <div className="px-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
-                          Insert
-                        </div>
+                      <div className="ff-toolbar-cluster shrink-0 space-y-1">
+                        <div className="ff-toolbar-cluster-label">Insert</div>
                         <div
-                          className={`flex items-center gap-1 rounded-md border p-1 ${
+                          className={`ff-toolbar-control-box ${
                             isDarkMode
                               ? 'border-slate-700 bg-slate-900'
                               : 'border-slate-300 bg-slate-50'
@@ -1962,12 +2109,12 @@ const App: React.FC = () => {
                         >
                           <button
                             onClick={handleAutoConnectEdge}
-                            className="flex h-8 items-center gap-1 rounded-md px-2.5 text-xs font-medium text-slate-600 transition-colors hover:bg-white dark:text-slate-300 dark:hover:bg-slate-700"
+                            className="ff-toolbar-btn flex items-center gap-1.5 px-2.5 text-xs font-medium text-slate-600 transition-colors hover:bg-white dark:text-slate-300 dark:hover:bg-slate-700"
                             title="Auto-connect from selected node, or nearest unlinked pair"
                             aria-label="Auto-connect edge"
                           >
                             <Sparkles className="h-4 w-4" />
-                            <span className="hidden sm:inline">Auto Edge</span>
+                            <span>Auto Edge</span>
                           </button>
                           <DraggableConnectorButton
                             onClick={() => handleAddConnector()}
@@ -1976,12 +2123,10 @@ const App: React.FC = () => {
                         </div>
                       </div>
 
-                      <div className="shrink-0 space-y-1">
-                        <div className="px-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
-                          Canvas
-                        </div>
+                      <div className="ff-toolbar-cluster min-w-0 flex-1 space-y-1">
+                        <div className="ff-toolbar-cluster-label">Canvas</div>
                         <div
-                          className={`flex items-center gap-1 rounded-md border p-1 ${
+                          className={`ff-toolbar-control-box ${
                             isDarkMode
                               ? 'border-slate-700 bg-slate-900'
                               : 'border-slate-300 bg-slate-50'
@@ -1990,37 +2135,37 @@ const App: React.FC = () => {
                           <button
                             onClick={toggleShowPorts}
                             aria-pressed={showPorts}
-                            className={`flex h-8 items-center gap-1 rounded-md px-2.5 text-xs font-medium ${
+                            className={`ff-toolbar-btn flex items-center gap-1.5 px-2.5 text-xs font-medium ${
                               showPorts
-                                ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-200'
+                                ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-200'
                                 : 'text-slate-600 hover:bg-white dark:text-slate-300 dark:hover:bg-slate-700'
                             }`}
                             title="Toggle ports"
                             aria-label="Toggle ports"
                           >
                             <CircleDot className="h-4 w-4" />
-                            <span className="hidden sm:inline">Ports</span>
+                            <span>Ports</span>
                           </button>
                           <button
                             onClick={toggleLayoutPanel}
                             aria-pressed={isLayoutPanelOpen}
-                            className={`flex h-8 items-center gap-1 rounded-md px-2.5 text-xs font-medium ${
+                            className={`ff-toolbar-btn flex items-center gap-1.5 px-2.5 text-xs font-medium ${
                               isLayoutPanelOpen
-                                ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-200'
+                                ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-200'
                                 : 'text-slate-600 hover:bg-white dark:text-slate-300 dark:hover:bg-slate-700'
                             }`}
                             title="Open layout controls"
                             aria-label="Open layout controls"
                           >
                             <Rows3 className="h-4 w-4" />
-                            <span className="hidden sm:inline">Layout</span>
+                            <span>Layout</span>
                           </button>
                           <button
                             onClick={() => setSnapToGrid((prev) => !prev)}
                             aria-pressed={snapToGrid}
-                            className={`flex h-8 items-center gap-1 rounded-md px-2.5 text-xs font-medium ${
+                            className={`ff-toolbar-btn flex items-center gap-1.5 px-2.5 text-xs font-medium ${
                               snapToGrid
-                                ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-200'
+                                ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-200'
                                 : 'text-slate-600 hover:bg-white dark:text-slate-300 dark:hover:bg-slate-700'
                             }`}
                             title="Toggle snap to grid while dragging"
@@ -2030,166 +2175,231 @@ const App: React.FC = () => {
                           </button>
                           <button
                             onClick={handleDelete}
-                            className="flex h-8 items-center gap-1 rounded-md px-2.5 text-xs font-medium text-slate-600 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:text-slate-300 dark:hover:bg-rose-500/20 dark:hover:text-rose-300"
+                            className="ff-toolbar-btn flex items-center gap-1.5 px-2.5 text-xs font-medium text-slate-600 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:text-slate-300 dark:hover:bg-rose-500/20 dark:hover:text-rose-300"
                             title="Delete selected"
                             aria-label="Delete selected item"
                           >
                             <Trash2 className="h-4 w-4" />
-                            <span className="hidden sm:inline">Delete</span>
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="shrink-0 space-y-1">
-                        <div className="px-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
-                          Arrange
-                        </div>
-                        <div
-                          className={`flex items-center gap-1 rounded-md border p-1 ${
-                            isDarkMode
-                              ? 'border-slate-700 bg-slate-900'
-                              : 'border-slate-300 bg-slate-50'
-                          }`}
-                        >
-                          <button
-                            onClick={handleDuplicateSelection}
-                            disabled={selectedNodeIds.length === 0}
-                            className="flex h-8 items-center gap-1 rounded-md px-2.5 text-xs font-medium text-slate-600 transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700"
-                            title="Duplicate selected nodes"
-                            aria-label="Duplicate selected nodes"
-                          >
-                            <span className="hidden sm:inline">Duplicate</span>
-                            <span className="sm:hidden">Dup</span>
-                          </button>
-                          <button
-                            onClick={() => handleAlignSelectedNodes('left')}
-                            disabled={selectedNodeIds.length < 2}
-                            className="h-8 rounded-md px-2 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700"
-                            title="Align left"
-                            aria-label="Align selected left"
-                          >
-                            L
-                          </button>
-                          <button
-                            onClick={() => handleAlignSelectedNodes('center')}
-                            disabled={selectedNodeIds.length < 2}
-                            className="h-8 rounded-md px-2 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700"
-                            title="Align center"
-                            aria-label="Align selected center"
-                          >
-                            C
-                          </button>
-                          <button
-                            onClick={() => handleAlignSelectedNodes('right')}
-                            disabled={selectedNodeIds.length < 2}
-                            className="h-8 rounded-md px-2 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700"
-                            title="Align right"
-                            aria-label="Align selected right"
-                          >
-                            R
-                          </button>
-                          <button
-                            onClick={handleDistributeSelectedNodes}
-                            disabled={selectedNodeIds.length < 3}
-                            className="h-8 rounded-md px-2 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700"
-                            title="Distribute horizontally"
-                            aria-label="Distribute selected horizontally"
-                          >
-                            Dist
+                            <span>Delete</span>
                           </button>
                         </div>
                       </div>
                     </div>
 
-                    <div className="shrink-0 space-y-1">
-                      <div className="px-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
-                        Edge
+                    <div className="ff-bottom-toolbar-row ff-bottom-toolbar-advanced">
+                      <div className="ff-toolbar-disclosure-row">
+                        <button
+                          type="button"
+                          data-testid="toolbar-toggle-arrange"
+                          aria-label="Toggle arrange controls"
+                          aria-controls="toolbar-arrange-panel"
+                          aria-expanded={isArrangeControlsOpen}
+                          onClick={() => setIsArrangeControlsOpen((prev) => !prev)}
+                          onKeyDown={(event) => handleDisclosureToggleKeyDown(event, setIsArrangeControlsOpen)}
+                          className={`ff-btn-secondary ff-focus ff-toolbar-disclosure-btn px-3 text-xs font-semibold ${
+                            isArrangeControlsOpen
+                              ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-200'
+                              : ''
+                          }`}
+                          title={isArrangeControlsOpen ? 'Hide arrange controls' : 'Show arrange controls'}
+                        >
+                          <span className="inline-flex items-center gap-1.5">
+                            Arrange
+                            <ChevronDown
+                              className={`h-3.5 w-3.5 transition-transform ${isArrangeControlsOpen ? 'rotate-180' : ''}`}
+                            />
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          data-testid="toolbar-toggle-edge"
+                          aria-label="Toggle edge styling controls"
+                          aria-controls="toolbar-edge-panel"
+                          aria-expanded={isEdgeControlsOpen}
+                          onClick={() => setIsEdgeControlsOpen((prev) => !prev)}
+                          onKeyDown={(event) => handleDisclosureToggleKeyDown(event, setIsEdgeControlsOpen)}
+                          className={`ff-btn-secondary ff-focus ff-toolbar-disclosure-btn px-3 text-xs font-semibold ${
+                            isEdgeControlsOpen
+                              ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-200'
+                              : ''
+                          }`}
+                          title={isEdgeControlsOpen ? 'Hide edge styling controls' : 'Show edge styling controls'}
+                        >
+                          <span className="inline-flex items-center gap-1.5">
+                            Edge
+                            <ChevronDown
+                              className={`h-3.5 w-3.5 transition-transform ${isEdgeControlsOpen ? 'rotate-180' : ''}`}
+                            />
+                          </span>
+                        </button>
+                        <span className="ff-muted-text pl-1 text-[10px] font-semibold uppercase tracking-[0.1em]">
+                          Advanced
+                        </span>
                       </div>
+
                       <div
-                        className={`flex items-center gap-1 rounded-md border px-2 py-1 ${
-                          isDarkMode
-                            ? 'border-slate-700 bg-slate-900'
-                            : 'border-slate-300 bg-slate-50'
+                        className={`ff-bottom-toolbar-advanced-panels ${
+                          isMobileViewport ? 'w-full flex-col' : ''
                         }`}
                       >
-                        <span className="mr-1 hidden text-[10px] font-medium uppercase tracking-[0.1em] text-slate-500 lg:inline">
-                          Link Style
-                        </span>
-                        {[
-                          { id: 'solid', icon: <Minus className="h-4 w-4" /> },
-                          { id: 'dashed', icon: <Divide className="h-4 w-4 rotate-90" /> },
-                          { id: 'dotted', icon: <MoreHorizontal className="h-4 w-4" /> }
-                        ].map((s) => (
-                          <button
-                            key={s.id}
-                            onClick={() => {
-                              if (!hasSelectedEdge) return;
-                              setActiveEdgeStyle(s.id as 'solid' | 'dashed' | 'dotted');
-                              const edge = edges.find((e) => e.id === selectedEdgeId);
-                              if (edge) handleUpdateEdge({ ...edge, style: s.id as 'solid' | 'dashed' | 'dotted' });
-                            }}
-                            disabled={!hasSelectedEdge}
-                            aria-pressed={hasSelectedEdge && activeEdgeStyle === s.id}
-                            className={`h-8 w-8 rounded-md p-0 transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-                              hasSelectedEdge && activeEdgeStyle === s.id
-                                ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-200'
-                                : 'text-slate-500 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-600'
-                            }`}
-                            title={`${s.id} line style`}
-                            aria-label={`${s.id} line style`}
+                        {isArrangeControlsOpen && (
+                          <div
+                            id="toolbar-arrange-panel"
+                            data-testid="toolbar-arrange-panel"
+                            className="ff-toolbar-cluster ff-motion-in w-full space-y-1 md:w-auto"
                           >
-                            {s.icon}
-                          </button>
-                        ))}
-                        <div
-                          className={`mx-0.5 h-5 w-px ${
-                            isDarkMode ? 'bg-slate-600' : 'bg-slate-300'
-                          }`}
-                        />
-                        <button
-                          onClick={() => {
-                            if (!hasSelectedEdge) return;
-                            const nc = { ...activeArrowConfig, showArrowHead: !activeArrowConfig.showArrowHead };
-                            setActiveArrowConfig(nc);
-                            const edge = edges.find((e) => e.id === selectedEdgeId);
-                            if (edge) handleUpdateEdge({ ...edge, ...nc });
-                          }}
-                          disabled={!hasSelectedEdge}
-                          aria-pressed={hasSelectedEdge && activeArrowConfig.showArrowHead}
-                          className={`h-8 w-8 rounded-md p-0 transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-                            hasSelectedEdge && activeArrowConfig.showArrowHead
-                              ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-200'
-                              : 'text-slate-500 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-600'
-                          }`}
-                          title="Toggle arrow head"
-                          aria-label="Toggle arrow head"
-                        >
-                          <ArrowRight className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (!hasSelectedEdge) return;
-                            const nc = { ...activeArrowConfig, showMidArrow: !activeArrowConfig.showMidArrow };
-                            setActiveArrowConfig(nc);
-                            const edge = edges.find((e) => e.id === selectedEdgeId);
-                            if (edge) handleUpdateEdge({ ...edge, ...nc });
-                          }}
-                          disabled={!hasSelectedEdge}
-                          aria-pressed={hasSelectedEdge && activeArrowConfig.showMidArrow}
-                          className={`h-8 w-8 rounded-md p-0 transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-                            hasSelectedEdge && activeArrowConfig.showMidArrow
-                              ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-200'
-                              : 'text-slate-500 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-600'
-                          }`}
-                          title="Toggle middle arrow"
-                          aria-label="Toggle middle arrow"
-                        >
-                          <ArrowRightLeft className="h-4 w-4" />
-                        </button>
-                        {!hasSelectedEdge && (
-                          <span className="ml-1 hidden text-[11px] font-medium text-slate-500 dark:text-slate-400 sm:inline">
-                            Select edge
-                          </span>
+                            <div className="ff-toolbar-cluster-label">Arrange</div>
+                            <div
+                              className={`ff-toolbar-control-box ${
+                                isDarkMode
+                                  ? 'border-slate-700 bg-slate-900'
+                                  : 'border-slate-300 bg-slate-50'
+                              }`}
+                            >
+                              <button
+                                onClick={handleDuplicateSelection}
+                                disabled={selectedNodeIds.length === 0}
+                                className="ff-toolbar-btn flex items-center gap-1.5 px-2.5 text-xs font-medium text-slate-600 transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700"
+                                title="Duplicate selected nodes"
+                                aria-label="Duplicate selected nodes"
+                              >
+                                <span>Duplicate</span>
+                              </button>
+                              <button
+                                onClick={() => handleAlignSelectedNodes('left')}
+                                disabled={selectedNodeIds.length < 2}
+                                className="ff-toolbar-btn min-w-[2.5rem] px-2 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700"
+                                title="Align left"
+                                aria-label="Align selected left"
+                              >
+                                L
+                              </button>
+                              <button
+                                onClick={() => handleAlignSelectedNodes('center')}
+                                disabled={selectedNodeIds.length < 2}
+                                className="ff-toolbar-btn min-w-[2.5rem] px-2 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700"
+                                title="Align center"
+                                aria-label="Align selected center"
+                              >
+                                C
+                              </button>
+                              <button
+                                onClick={() => handleAlignSelectedNodes('right')}
+                                disabled={selectedNodeIds.length < 2}
+                                className="ff-toolbar-btn min-w-[2.5rem] px-2 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700"
+                                title="Align right"
+                                aria-label="Align selected right"
+                              >
+                                R
+                              </button>
+                              <button
+                                onClick={handleDistributeSelectedNodes}
+                                disabled={selectedNodeIds.length < 3}
+                                className="ff-toolbar-btn px-2.5 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700"
+                                title="Distribute horizontally"
+                                aria-label="Distribute selected horizontally"
+                              >
+                                Dist
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {isEdgeControlsOpen && (
+                          <div
+                            id="toolbar-edge-panel"
+                            data-testid="toolbar-edge-panel"
+                            className="ff-toolbar-cluster ff-motion-in w-full space-y-1 md:w-auto"
+                          >
+                            <div className="ff-toolbar-cluster-label">Edge</div>
+                            <div
+                              className={`ff-toolbar-control-box px-2 ${
+                                isDarkMode
+                                  ? 'border-slate-700 bg-slate-900'
+                                  : 'border-slate-300 bg-slate-50'
+                              }`}
+                            >
+                              <span className="mr-1 hidden text-[10px] font-medium uppercase tracking-[0.1em] text-slate-500 lg:inline">
+                                Link Style
+                              </span>
+                              {[
+                                { id: 'solid', icon: <Minus className="h-4 w-4" /> },
+                                { id: 'dashed', icon: <Divide className="h-4 w-4 rotate-90" /> },
+                                { id: 'dotted', icon: <MoreHorizontal className="h-4 w-4" /> }
+                              ].map((s) => (
+                                <button
+                                  key={s.id}
+                                  onClick={() => {
+                                    if (!hasSelectedEdge) return;
+                                    setActiveEdgeStyle(s.id as 'solid' | 'dashed' | 'dotted');
+                                    const edge = edges.find((e) => e.id === selectedEdgeId);
+                                    if (edge) handleUpdateEdge({ ...edge, style: s.id as 'solid' | 'dashed' | 'dotted' });
+                                  }}
+                                  disabled={!hasSelectedEdge}
+                                  aria-pressed={hasSelectedEdge && activeEdgeStyle === s.id}
+                                  className={`ff-toolbar-btn h-10 w-10 p-0 transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                                    hasSelectedEdge && activeEdgeStyle === s.id
+                                      ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-200'
+                                      : 'text-slate-500 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-600'
+                                  }`}
+                                  title={`${s.id} line style`}
+                                  aria-label={`${s.id} line style`}
+                                >
+                                  {s.icon}
+                                </button>
+                              ))}
+                              <div
+                                className={`mx-0.5 h-5 w-px ${
+                                  isDarkMode ? 'bg-slate-600' : 'bg-slate-300'
+                                }`}
+                              />
+                              <button
+                                onClick={() => {
+                                  if (!hasSelectedEdge) return;
+                                  const nc = { ...activeArrowConfig, showArrowHead: !activeArrowConfig.showArrowHead };
+                                  setActiveArrowConfig(nc);
+                                  const edge = edges.find((e) => e.id === selectedEdgeId);
+                                  if (edge) handleUpdateEdge({ ...edge, ...nc });
+                                }}
+                                disabled={!hasSelectedEdge}
+                                aria-pressed={hasSelectedEdge && activeArrowConfig.showArrowHead}
+                                className={`ff-toolbar-btn h-10 w-10 p-0 transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                                  hasSelectedEdge && activeArrowConfig.showArrowHead
+                                    ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-200'
+                                    : 'text-slate-500 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-600'
+                                }`}
+                                title="Toggle arrow head"
+                                aria-label="Toggle arrow head"
+                              >
+                                <ArrowRight className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  if (!hasSelectedEdge) return;
+                                  const nc = { ...activeArrowConfig, showMidArrow: !activeArrowConfig.showMidArrow };
+                                  setActiveArrowConfig(nc);
+                                  const edge = edges.find((e) => e.id === selectedEdgeId);
+                                  if (edge) handleUpdateEdge({ ...edge, ...nc });
+                                }}
+                                disabled={!hasSelectedEdge}
+                                aria-pressed={hasSelectedEdge && activeArrowConfig.showMidArrow}
+                                className={`ff-toolbar-btn h-10 w-10 p-0 transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                                  hasSelectedEdge && activeArrowConfig.showMidArrow
+                                    ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-200'
+                                    : 'text-slate-500 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-600'
+                                }`}
+                                title="Toggle middle arrow"
+                                aria-label="Toggle middle arrow"
+                              >
+                                <ArrowRightLeft className="h-4 w-4" />
+                              </button>
+                              {!hasSelectedEdge && (
+                                <span className="ml-1 hidden text-[11px] font-medium text-slate-500 dark:text-slate-400 sm:inline">
+                                  Select edge
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         )}
                       </div>
                     </div>

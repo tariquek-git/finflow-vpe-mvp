@@ -28,6 +28,11 @@ test('starter diagram is loaded and can be edited', async ({ page }) => {
   await expect(page.locator('div.group.absolute').filter({ hasText: 'Processor' }).first()).toBeVisible();
   await expect(page.locator('div.group.absolute').filter({ hasText: 'Card Network' }).first()).toBeVisible();
 
+  const arrangeToggle = page.getByRole('button', { name: 'Toggle arrange controls' });
+  await expect(arrangeToggle).toBeVisible();
+  await arrangeToggle.click();
+  await expect(arrangeToggle).toHaveAttribute('aria-expanded', 'true');
+
   const duplicateButton = page.locator('button[title="Duplicate selected nodes"]');
   await expect(duplicateButton).toBeDisabled();
 
@@ -103,6 +108,11 @@ test('reset and restore recover previous workspace state', async ({ page }) => {
 
 test('edge style controls respond for selected connector', async ({ page }) => {
   await page.locator('[data-testid="toolbar-insert-connector"]').click();
+
+  const edgeToggle = page.getByRole('button', { name: 'Toggle edge styling controls' });
+  await expect(edgeToggle).toBeVisible();
+  await edgeToggle.click();
+  await expect(edgeToggle).toHaveAttribute('aria-expanded', 'true');
 
   const dashedButton = page.locator('button[title="dashed line style"]');
   const dottedButton = page.locator('button[title="dotted line style"]');

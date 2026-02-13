@@ -85,20 +85,20 @@ const Section: React.FC<{ title: string; icon: React.ReactNode; children?: React
   icon,
   children
 }) => (
-  <div className="ff-motion-in mb-6">
-    <div className="ff-soft-divider mb-3 flex items-center gap-2 border-b px-1 pb-1.5">
+  <div className="ff-motion-in ff-inspector-section mb-4">
+    <div className="ff-inspector-section-head">
       <div className="text-[var(--color-accent-1)]">{icon}</div>
-      <h3 className="ff-muted-text text-[10px] font-semibold uppercase tracking-[0.12em]">
+      <h3 className="ff-shell-section-title">
         {title}
       </h3>
     </div>
-    <div className="space-y-3 px-1">{children}</div>
+    <div className="space-y-3">{children}</div>
   </div>
 );
 
 const Field: React.FC<{ label: string; children?: React.ReactNode }> = ({ label, children }) => (
-  <div className="flex flex-col gap-1">
-    <label className="ff-muted-text ml-0.5 text-[9px] font-semibold uppercase tracking-[0.08em]">
+  <div className="ff-inspector-field">
+    <label className="ff-inspector-label">
       {label}
     </label>
     {children}
@@ -108,14 +108,14 @@ const Field: React.FC<{ label: string; children?: React.ReactNode }> = ({ label,
 const Input: React.FC<React.InputHTMLAttributes<HTMLInputElement>> = (props) => (
   <input
     {...props}
-    className="ff-input ff-focus w-full px-3 py-2 text-xs font-medium outline-none"
+    className="ff-input ff-focus h-9 w-full px-3 py-2 text-xs font-medium outline-none"
   />
 );
 
 const Select: React.FC<React.SelectHTMLAttributes<HTMLSelectElement>> = (props) => (
   <select
     {...props}
-    className="ff-input ff-focus w-full cursor-pointer appearance-none px-3 py-2 text-xs font-medium outline-none"
+    className="ff-input ff-focus h-9 w-full cursor-pointer appearance-none px-3 py-2 text-xs font-medium outline-none"
   >
     {props.children}
   </select>
@@ -128,7 +128,7 @@ const DetailToggle: React.FC<{
 }> = ({ isActive, label, onClick }) => (
   <button
     onClick={onClick}
-    className={`ff-focus rounded-md px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] transition-colors ${
+    className={`ff-focus rounded-md px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] transition-colors ${
       isActive
         ? 'bg-[var(--color-accent-1)] text-white shadow-sm'
         : 'text-[var(--color-text-tertiary)] hover:bg-[color:var(--color-surface-3)]'
@@ -203,6 +203,11 @@ const Inspector: React.FC<InspectorProps> = ({
   const selectedNodeColor = nodeForm.watch('color') || '';
   const edgeIsFX = edgeForm.watch('isFX');
   const edgeIsExceptionPath = edgeForm.watch('isExceptionPath');
+  const selectionSummary =
+    selectedNode?.label ||
+    selectedEdge?.label ||
+    selectedEdge?.rail ||
+    '';
 
   useEffect(() => {
     setDetailLevel('basic');
@@ -290,6 +295,9 @@ const Inspector: React.FC<InspectorProps> = ({
           <MousePointer2 className="h-4 w-4 text-[var(--color-accent-1)]" />
           <h2 className="text-xs font-semibold uppercase tracking-[0.14em]">Canvas Settings</h2>
         </div>
+        <p className="ff-shell-section-note mb-3">
+          Select a node or edge to edit details. Canvas-wide controls are available here.
+        </p>
 
         <Section title="Layout Controls" icon={<ShieldCheck className="h-3.5 w-3.5" />}>
           <Field label="Grid Mode">
@@ -351,11 +359,16 @@ const Inspector: React.FC<InspectorProps> = ({
   return (
     <div className="ff-panel flex h-full flex-col border-0 bg-transparent shadow-none">
       <div className="ff-soft-divider flex items-center justify-between border-b px-4 py-4">
-        <div className="flex items-center gap-2">
+        <div className="min-w-0 flex items-center gap-2">
           <div className="h-2 w-2 rounded-full bg-[var(--color-accent-1)]" />
           <h2 className="text-xs font-semibold uppercase tracking-[0.14em]">
             {selectedNode ? 'Entity Profile' : 'Link Logic'}
           </h2>
+          {selectionSummary && (
+            <span className="ff-chip max-w-[11rem] truncate">
+              {selectionSummary}
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -377,7 +390,7 @@ const Inspector: React.FC<InspectorProps> = ({
         </div>
       </div>
 
-      <div className="custom-scrollbar flex-1 overflow-y-auto p-4">
+      <div className="ff-scrollbar-thin flex-1 overflow-y-auto p-4">
         {selectedNode && detailLevel === 'basic' && (
           <Section title="Entity Basics" icon={<Zap className="h-3.5 w-3.5" />}>
             <Field label="Entity Label">
@@ -399,7 +412,7 @@ const Inspector: React.FC<InspectorProps> = ({
                     key={color.hex}
                     onClick={() => nodeForm.setValue('color', color.hex, { shouldDirty: true, shouldValidate: true })}
                     title={color.label}
-                    className={`h-6 w-6 rounded-full border-2 transition-transform hover:scale-110 ${
+                    className={`ff-focus h-7 w-7 rounded-full border-2 transition-transform hover:scale-110 ${
                       selectedNodeColor === color.hex
                         ? 'scale-110 border-blue-500 shadow-lg'
                         : 'border-transparent'
@@ -424,13 +437,13 @@ const Inspector: React.FC<InspectorProps> = ({
                 ))}
               </Select>
             </Field>
-              <Field label="Entity Notes">
-                <textarea
-                  {...nodeForm.register('description')}
-                  className="ff-input ff-focus h-24 w-full resize-none p-3 text-xs outline-none"
-                  placeholder="Optional notes for this entity..."
-                />
-              </Field>
+            <Field label="Entity Notes">
+              <textarea
+                {...nodeForm.register('description')}
+                className="ff-input ff-focus h-24 w-full resize-none p-3 text-xs outline-none"
+                placeholder="Optional notes for this entity..."
+              />
+            </Field>
           </Section>
         )}
 
@@ -500,7 +513,7 @@ const Inspector: React.FC<InspectorProps> = ({
                       shouldValidate: true
                     })
                   }
-                  className={`ff-focus rounded-md border px-3 py-2 text-[10px] font-semibold uppercase transition-all ${
+                  className={`ff-focus min-h-[2.5rem] rounded-md border px-3 py-2 text-[10px] font-semibold uppercase transition-all ${
                     edgeIsFX
                       ? 'border-emerald-600 bg-emerald-500 text-white shadow-md'
                       : 'ff-btn-secondary'
@@ -515,7 +528,7 @@ const Inspector: React.FC<InspectorProps> = ({
                       shouldValidate: true
                     })
                   }
-                  className={`ff-focus rounded-md border px-3 py-2 text-[10px] font-semibold uppercase transition-all ${
+                  className={`ff-focus min-h-[2.5rem] rounded-md border px-3 py-2 text-[10px] font-semibold uppercase transition-all ${
                     edgeIsExceptionPath
                       ? 'bg-rose-500 border-rose-600 text-white shadow-md'
                       : 'ff-btn-secondary'

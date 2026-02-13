@@ -20,3 +20,9 @@ This folder captures visual baselines for the modern UI refresh.
 - `after/after-desktop-canvas-dark.png`
 - `after/after-mobile-toolbar-light.png`
 - `after/after-mobile-toolbar-dark.png`
+
+## After (premium polish branch `codex/ui-premium-polish-sprint`)
+- `after/after-bottom-toolbar-desktop-default.png`
+- `after/after-bottom-toolbar-desktop-advanced.png`
+- `after/after-bottom-toolbar-mobile-default.png`
+- `after/after-bottom-toolbar-mobile-advanced.png`
