@@ -1,32 +1,38 @@
-# Public MVP Launch Checklist
+# Local MVP Launch Checklist
 
-## Pre-merge
+## Local Gate Evidence (v0.1.1-local)
 - [x] `npm run doctor`
 - [x] `npm run build`
 - [x] `npm run test:smoke`
 - [x] `npm run test:mvp`
 - [x] `npm run test:mvp:onboarding`
 - [x] `npm run test:mvp:feedback`
+- [x] `npm run test:qa`
+- [x] Gate run timestamp (UTC): `2026-02-13 03:37:15Z` to `2026-02-13 03:37:50Z`
+- [x] Gate run timestamp (local): `2026-02-12 22:37:15 EST` to `2026-02-12 22:37:50 EST`
 
-## GitHub
-- [x] Push branch `codex/bootstrap-ci-gate` (to local origin)
-- [ ] Open PR to `main` (intentionally skipped for local-only release)
-- [ ] Ensure `qa` is required in branch protection (intentionally skipped for local-only release)
+## Local Release Tags
+- [x] Baseline RC tag: `v0.1.0-mvp-rc1`
+- [x] Baseline local release: `v0.1.0-local`
+- [x] UX RC tag: `v0.1.1-local-ux-rc1`
+- [x] UX local release: `v0.1.1-local`
 
-## Vercel
-- [ ] Project connected to repo (intentionally skipped for local-only release)
-- [ ] Build command: `npm run build` (intentionally skipped for local-only release)
-- [ ] Output directory: `dist` (intentionally skipped for local-only release)
-- [ ] Production branch: `main` (intentionally skipped for local-only release)
-- [ ] Preview deploys enabled for PRs (intentionally skipped for local-only release)
-- [ ] `VITE_ENABLE_AI=false` for preview and production (intentionally skipped for local-only release)
+## Local Deliverable Freeze
+- [x] Artifact: `release-artifacts/finflow_review-v0.1.1-local.tar.gz`
+- [x] Checksum: `release-artifacts/finflow_review-v0.1.1-local.sha256`
+- [x] SHA-256: `15ca1e6d6daa3591717aa30c2479d702febdfa401e8930bef88c8ef4b59f9ad3`
 
-## Launch
-- [x] Tag release candidate `v0.1.0-mvp-rc1`
-- [x] Run manual smoke on local URL (`http://127.0.0.1:3000`)
-- [x] Tag and promote local release (`v0.1.0-local`)
+## GitHub (Intentionally Skipped: local-only)
+- [ ] Open PR to `main`
+- [ ] Require `qa` branch protection on `main`
 
-## Local-Only Release Notes
+## Vercel (Intentionally Skipped: local-only)
+- [ ] Connect project to repository
+- [ ] Configure production and preview deployments
+- [ ] Set `VITE_ENABLE_AI=false` in hosted environments
+
+## Local-Only Notes
 - Release branch of record: `codex/bootstrap-ci-gate`
 - Local origin default HEAD: `codex/bootstrap-ci-gate`
-- Main remains untouched due to unrelated history.
+- `main` remains untouched due to unrelated history.
+- Public-hosted deployment is intentionally out of scope for this release flow.
