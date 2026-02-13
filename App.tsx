@@ -265,6 +265,18 @@ const persistRecoveryMeta = (meta: RecoveryMeta): boolean => {
   }
 };
 
+const formatBackupTimestamp = (iso: string | null): string | null => {
+  if (!iso) return null;
+  const parsed = Date.parse(iso);
+  if (Number.isNaN(parsed)) return null;
+  return new Date(parsed).toLocaleString([], {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit'
+  });
+};
+
 const shouldRecordEditHistory = (
   ref: React.MutableRefObject<EditMergeState>,
   id: string,
@@ -387,6 +399,10 @@ const App: React.FC = () => {
     } catch {
       // Ignore storage errors and only dismiss for this session.
     }
+  }, []);
+
+  const openQuickStart = useCallback(() => {
+    setIsQuickStartVisible(true);
   }, []);
 
   useEffect(() => {
@@ -1366,6 +1382,13 @@ const App: React.FC = () => {
     if (!isAIEnabled) return;
     void import('@google/genai');
   }, [isAIEnabled]);
+  const backupStatusTimestamp = formatBackupTimestamp(recoveryLastSavedAt);
+  const backupStatusText =
+    hasRecoverySnapshot && backupStatusTimestamp
+      ? `Backup: Available · last saved ${backupStatusTimestamp}`
+      : hasRecoverySnapshot
+        ? 'Backup: Available'
+        : 'Backup: Not yet created';
 
   return (
       <div className={`finflow-app-shell flex h-screen flex-col overflow-hidden ${isDarkMode ? 'dark text-slate-100' : 'text-slate-900'}`}>
@@ -1376,7 +1399,7 @@ const App: React.FC = () => {
               : 'border-slate-300 bg-white/95'
           }`}
         >
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 md:gap-3">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-lg font-bold text-white">
               F
             </div>
@@ -1395,6 +1418,7 @@ const App: React.FC = () => {
             </span>
             <span
               data-testid="backup-status-indicator"
+              data-last-saved-at={recoveryLastSavedAt || ''}
               className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                 hasRecoverySnapshot
                   ? isDarkMode
@@ -1410,13 +1434,13 @@ const App: React.FC = () => {
                   : 'No backup created yet'
               }
             >
-              {hasRecoverySnapshot ? 'Backup: Available' : 'Backup: Not yet created'}
+              {backupStatusText}
             </span>
             <a
               href={feedbackHref}
               target="_blank"
               rel="noreferrer"
-              className={`hidden rounded-full px-2 py-0.5 text-[10px] font-semibold transition lg:inline-flex ${
+              className={`rounded-full px-2 py-0.5 text-[10px] font-semibold transition ${
                 isDarkMode
                   ? 'bg-blue-500/20 text-blue-200 hover:bg-blue-500/30'
                   : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
@@ -1486,11 +1510,12 @@ const App: React.FC = () => {
             )}
           </div>
 
-          <div className="flex w-full items-center gap-1.5 overflow-x-auto pb-1 md:w-auto md:overflow-visible md:pb-0">
+          <div className="flex w-full flex-col gap-2 md:w-auto md:flex-row md:items-center">
+            <div className="flex w-full items-center gap-1.5 overflow-x-auto pb-1 md:w-auto md:overflow-visible md:pb-0">
             <button
               onClick={() => setIsSidebarOpen((prev) => !prev)}
               aria-pressed={isSidebarOpen}
-              className={`shrink-0 flex items-center gap-1 rounded-md border px-2.5 py-2 text-[11px] font-semibold transition lg:hidden ${
+              className={`tap-target shrink-0 flex items-center gap-1 rounded-md border px-2.5 py-2 text-[11px] font-semibold transition lg:hidden ${
                 isDarkMode
                   ? 'border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-700'
                   : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
@@ -1501,7 +1526,7 @@ const App: React.FC = () => {
             <button
               onClick={() => setIsInspectorOpen((prev) => !prev)}
               aria-pressed={isInspectorOpen}
-              className={`shrink-0 flex items-center gap-1 rounded-md border px-2.5 py-2 text-[11px] font-semibold transition lg:hidden ${
+              className={`tap-target shrink-0 flex items-center gap-1 rounded-md border px-2.5 py-2 text-[11px] font-semibold transition lg:hidden ${
                 isDarkMode
                   ? 'border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-700'
                   : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
@@ -1522,7 +1547,7 @@ const App: React.FC = () => {
                 aria-label="Undo"
                 onClick={handleUndo}
                 disabled={past.length === 0}
-                className="rounded-md p-2 text-slate-500 transition hover:bg-slate-100 disabled:opacity-30 dark:text-slate-300 dark:hover:bg-slate-700"
+                className="tap-target rounded-md p-2 text-slate-500 transition hover:bg-slate-100 disabled:opacity-30 dark:text-slate-300 dark:hover:bg-slate-700"
               >
                 <RotateCcw className="h-4 w-4" />
               </button>
@@ -1531,7 +1556,7 @@ const App: React.FC = () => {
                 aria-label="Redo"
                 onClick={handleRedo}
                 disabled={future.length === 0}
-                className="rounded-md p-2 text-slate-500 transition hover:bg-slate-100 disabled:opacity-30 dark:text-slate-300 dark:hover:bg-slate-700"
+                className="tap-target rounded-md p-2 text-slate-500 transition hover:bg-slate-100 disabled:opacity-30 dark:text-slate-300 dark:hover:bg-slate-700"
               >
                 <RotateCw className="h-4 w-4" />
               </button>
@@ -1541,7 +1566,7 @@ const App: React.FC = () => {
               onClick={() => setIsDarkMode(!isDarkMode)}
               aria-pressed={isDarkMode}
               aria-label={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
-              className={`shrink-0 rounded-md border p-2 transition ${
+              className={`tap-target shrink-0 rounded-md border p-2 transition ${
                 isDarkMode
                   ? 'border-slate-700 bg-slate-900 text-yellow-300 hover:bg-slate-700'
                   : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-100'
@@ -1549,17 +1574,30 @@ const App: React.FC = () => {
             >
               {isDarkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </button>
+            <button
+              data-testid="toolbar-help-open"
+              onClick={openQuickStart}
+              aria-label="Open quick start help"
+              className={`tap-target shrink-0 rounded-md border px-2.5 py-2 text-[11px] font-semibold transition ${
+                isDarkMode
+                  ? 'border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-700'
+                  : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              Help
+            </button>
+            </div>
 
             <div
               data-testid="primary-actions-strip"
-              className={`primary-actions-strip shrink-0 rounded-md border px-2 py-1 ${
+              className={`primary-actions-strip rounded-md border px-2 py-1 ${
                 isDarkMode ? 'border-slate-700 bg-slate-900' : 'border-slate-300 bg-white'
               }`}
             >
               <div className="mb-1 px-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
                 Primary Actions
               </div>
-              <div className="flex items-center gap-1">
+              <div className="primary-actions-grid">
                 <button
                   onClick={handleRestoreRecovery}
                   data-testid="toolbar-restore"
@@ -1568,7 +1606,7 @@ const App: React.FC = () => {
                       ? 'Restore the backup captured before reset/import'
                       : 'No backup yet. Click to see recovery guidance.'
                   }
-                  className={`shrink-0 flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold transition ${
+                  className={`tap-target shrink-0 flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold transition ${
                     isDarkMode
                       ? hasRecoverySnapshot
                         ? 'border-slate-700 bg-slate-800 text-slate-100 hover:bg-slate-700'
@@ -1586,7 +1624,7 @@ const App: React.FC = () => {
                   onClick={handleResetCanvas}
                   data-testid="toolbar-reset-canvas"
                   title="Reset to starter template (saves backup first)"
-                  className={`shrink-0 flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold transition ${
+                  className={`tap-target shrink-0 flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold transition ${
                     isDarkMode
                       ? 'border-slate-700 bg-slate-800 text-slate-100 hover:bg-slate-700'
                       : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
@@ -1597,9 +1635,10 @@ const App: React.FC = () => {
                 </button>
 
                 <button
+                  data-testid="toolbar-import-json"
                   onClick={() => importInputRef.current?.click()}
                   title="Import FinFlow JSON (current work is backed up first)"
-                  className={`shrink-0 flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold transition ${
+                  className={`tap-target shrink-0 flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold transition ${
                     isDarkMode
                       ? 'border-slate-700 bg-slate-800 text-slate-100 hover:bg-slate-700'
                       : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
@@ -1609,9 +1648,10 @@ const App: React.FC = () => {
                   <span>Import JSON</span>
                 </button>
                 <button
+                  data-testid="toolbar-export-json"
                   onClick={handleExportDiagram}
                   title="Export current canvas as FinFlow JSON"
-                  className="shrink-0 flex items-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-blue-700 dark:bg-blue-500 dark:text-white"
+                  className="tap-target shrink-0 flex items-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-blue-700 dark:bg-blue-500 dark:text-white"
                 >
                   <Download className="h-4 w-4" />
                   <span>Export JSON</span>

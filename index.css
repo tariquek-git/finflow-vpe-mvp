@@ -61,7 +61,35 @@ body {
 }
 
 .primary-actions-strip {
-  min-width: max-content;
+  width: 100%;
+}
+
+.primary-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.375rem;
+}
+
+.tap-target {
+  min-height: 40px;
+}
+
+.tap-target:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+@media (min-width: 768px) {
+  .primary-actions-strip {
+    width: auto;
+    min-width: max-content;
+  }
+
+  .primary-actions-grid {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
 }
 
 .dark .surface-ring {
