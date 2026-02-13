@@ -12,8 +12,49 @@ body,
   margin: 0;
 }
 
+:root {
+  --ui-bg: #f1f5f9;
+  --ui-text: #0f172a;
+  --ui-muted: #475569;
+  --ui-border: #cbd5e1;
+  --ui-surface: #ffffff;
+  --ui-surface-soft: #f8fafc;
+  --ui-focus: #2563eb;
+}
+
+.dark {
+  --ui-bg: #020617;
+  --ui-text: #e2e8f0;
+  --ui-muted: #94a3b8;
+  --ui-border: #334155;
+  --ui-surface: #0f172a;
+  --ui-surface-soft: #111827;
+  --ui-focus: #38bdf8;
+}
+
 body {
   font-family: 'Manrope', sans-serif;
+  background: var(--ui-bg);
+  color: var(--ui-text);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+:where(button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+
+button,
+input,
+select,
+textarea {
+  transition: border-color 140ms ease, box-shadow 140ms ease, background-color 140ms ease, color 140ms ease;
 }
 
 .react-flow__pane {

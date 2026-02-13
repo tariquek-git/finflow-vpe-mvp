@@ -1,6 +1,6 @@
 {
-  "date": "2026-02-13T03:55:26.005Z",
-  "baseUrl": "http://127.0.0.1:56163",
+  "date": "2026-02-13T04:07:17.588Z",
+  "baseUrl": "http://127.0.0.1:56855",
   "checks": [
     {
       "id": "A0",
@@ -84,7 +84,7 @@
       "id": "D1D2D3",
       "name": "75-node import and auto-layout",
       "ok": true,
-      "details": "autoLayoutClickToStable~720ms"
+      "details": "autoLayoutClickToStable~579ms"
     }
   ],
   "summary": {

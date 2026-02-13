@@ -36,9 +36,9 @@ Date: 2026-02-13
 
 - Latest E2E report: `docs/mvp-qa-e2e-report.md`
 - Latest E2E JSON: `docs/mvp-qa-e2e-report.json`
-- Latest E2E screenshots/downloads: `qa-artifacts/2026-02-13T03-55-26-004Z`
-- Latest deep pilot summary: `qa-artifacts/deep-pilot/2026-02-13T03-55-34-487Z/deep-pilot-summary.md`
-- Latest deep pilot JSON: `qa-artifacts/deep-pilot/2026-02-13T03-55-34-487Z/deep-pilot-summary.json`
+- Latest E2E screenshots/downloads: `qa-artifacts/2026-02-13T04-07-17-586Z`
+- Latest deep pilot summary: `qa-artifacts/deep-pilot/2026-02-13T04-07-27-230Z/deep-pilot-summary.md`
+- Latest deep pilot JSON: `qa-artifacts/deep-pilot/2026-02-13T04-07-27-230Z/deep-pilot-summary.json`
 
 ## Pilot Findings (Template)
 
@@ -49,7 +49,7 @@ Use this section during local pilot runs. Record only `P0`/`P1` issues.
 - Date: 2026-02-13
 - Tester: Codex deep pilot runner
 - Scenario: `Load Sample`, save/import/new lifecycle, edge inspector editability, graph-only undo, export variants, 75-node stress + repeated auto-layout, reload persistence, beforeunload lifecycle
-- Build/Tag: `v0.1.2-rc1`
+- Build/Tag: `v0.1.3-rc1`
 - Result: PASS (`PASSED=9`, `FAILED=0`)
 
 ### Issues
@@ -67,3 +67,4 @@ Use this section during local pilot runs. Record only `P0`/`P1` issues.
 
 - 2026-02-13: `v0.1.1` local patch release prepared (beforeunload guard, undo/redo temporal scope narrowed to nodes+edges, pinned `@xyflow/react`, hardened Vercel headers). Full gate PASS.
 - 2026-02-13: `v0.1.2` local patch release prepared (deterministic post-hydrate viewport normalization + repeatable deep pilot harness). Full validation + deep pilot PASS.
+- 2026-02-13: `v0.1.3` local patch release prepared (inspector-first UI/UX hierarchy and accessibility polish). Full validation + deep pilot PASS.

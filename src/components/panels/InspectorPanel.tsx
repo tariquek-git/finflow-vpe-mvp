@@ -1,4 +1,5 @@
 import { CircleHelp, Link2, RotateCcw, SquarePen } from 'lucide-react';
+import type { ReactNode } from 'react';
 import {
   CARD_NETWORK_FIELDS,
   EDGE_FIELDS,
@@ -20,25 +21,130 @@ interface Props {
   onResetEdge: (id: string) => void;
 }
 
+interface SectionDef {
+  title: string;
+  description?: string;
+  fields: FieldDef<string>[];
+}
+
+const NODE_GROUPS: Array<{ title: string; description: string; keys: string[] }> = [
+  {
+    title: 'Core',
+    description: 'Identity and flow role for this node.',
+    keys: ['displayName', 'description', 'jurisdiction', 'roleInFlow'],
+  },
+  {
+    title: 'Regulatory',
+    description: 'Regulator and settlement access controls.',
+    keys: ['regulator', 'settlementAccess'],
+  },
+  {
+    title: 'Integration',
+    description: 'Integration and posting behavior.',
+    keys: ['integrationMode', 'postingTiming', 'coreType'],
+  },
+  {
+    title: 'Accounts and Ledger',
+    description: 'Account custody and ledger metadata.',
+    keys: ['heldAt', 'custodyModel', 'ledgerType', 'balanceModel', 'sourceOfTruth'],
+  },
+  {
+    title: 'Controls',
+    description: 'Compliance and ownership controls.',
+    keys: ['method', 'owner', 'treasuryScope'],
+  },
+];
+
+const EDGE_GROUPS: Array<{ title: string; description: string; keys: string[] }> = [
+  {
+    title: 'Rail and Settlement',
+    description: 'Primary movement rail and settlement model.',
+    keys: ['rail', 'settlementType'],
+  },
+  {
+    title: 'Direction and Flow',
+    description: 'Directionality and message/funds semantics.',
+    keys: ['direction', 'messageOrFunds'],
+  },
+  {
+    title: 'Notes',
+    description: 'Free-form implementation notes for this edge.',
+    keys: ['notes'],
+  },
+];
+
+const FIELD_HELPERS: Record<string, string> = {
+  roleInFlow: 'Defines the operational responsibility of this node within the flow.',
+  settlementType: 'Capture whether settlement happens instantly, in batch, or delayed windows.',
+  messageOrFunds: 'Clarifies if this edge represents messaging, funds movement, or both.',
+};
+
+function toSections(fields: FieldDef<string>[], groups: Array<{ title: string; description: string; keys: string[] }>): SectionDef[] {
+  const byKey = new Map(fields.map((field) => [field.key, field]));
+  const consumed = new Set<string>();
+  const sections: SectionDef[] = [];
+
+  for (const group of groups) {
+    const groupFields = group.keys
+      .map((key) => byKey.get(key))
+      .filter((field): field is FieldDef<string> => Boolean(field));
+
+    if (groupFields.length === 0) {
+      continue;
+    }
+
+    for (const field of groupFields) {
+      consumed.add(field.key);
+    }
+
+    sections.push({
+      title: group.title,
+      description: group.description,
+      fields: groupFields,
+    });
+  }
+
+  const remaining = fields.filter((field) => !consumed.has(field.key));
+  if (remaining.length > 0) {
+    sections.push({
+      title: 'Additional',
+      description: 'Additional context fields for this item.',
+      fields: remaining,
+    });
+  }
+
+  return sections;
+}
+
+function SectionCard({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
+  return (
+    <section className="rounded-xl border border-slate-300 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
+      <h3 className="text-xs font-bold uppercase tracking-wide text-slate-700 dark:text-slate-200">{title}</h3>
+      {description && <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">{description}</p>}
+      <div className="mt-3">{children}</div>
+    </section>
+  );
+}
+
 function Field({
-  label,
   field,
   value,
   onChange,
 }: {
-  label: string;
   field: FieldDef<string>;
   value: string;
   onChange: (value: string) => void;
 }) {
   const base =
-    'w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-800 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100';
+    'mt-1 w-full rounded-lg border border-slate-300 bg-white px-2.5 text-xs text-slate-800 shadow-sm outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-sky-400';
+  const helper = FIELD_HELPERS[field.key];
+  const isSelectBlank = field.kind === 'select' && value === 'Blank';
 
   return (
-    <label className="mb-2 block">
-      <span className="mb-1 block text-[11px] font-semibold text-slate-600 dark:text-slate-300">{label}</span>
+    <label className="mb-3 block">
+      <span className="block text-[11px] font-semibold text-slate-700 dark:text-slate-200">{field.label}</span>
       {field.kind === 'select' ? (
-        <select value={value} onChange={(event) => onChange(event.target.value)} className={base}>
+        <select value={value} onChange={(event) => onChange(event.target.value)} className={`${base} h-9`}>
           {field.options?.map((option) => (
             <option key={option} value={option}>
               {option}
@@ -46,10 +152,20 @@ function Field({
           ))}
         </select>
       ) : field.kind === 'textarea' ? (
-        <textarea value={value} onChange={(event) => onChange(event.target.value)} className={base} rows={3} />
+        <textarea
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className={`${base} min-h-[88px] py-2`}
+          rows={4}
+        />
       ) : (
-        <input value={value} onChange={(event) => onChange(event.target.value)} className={base} />
+        <input value={value} onChange={(event) => onChange(event.target.value)} className={`${base} h-9`} />
       )}
+
+      {isSelectBlank && (
+        <span className="mt-1 block text-[10px] font-medium text-amber-700 dark:text-amber-300">Using default value: Blank</span>
+      )}
+      {helper && <span className="mt-1 block text-[10px] text-slate-500 dark:text-slate-400">{helper}</span>}
     </label>
   );
 }
@@ -86,38 +202,50 @@ export function InspectorPanel(props: Props) {
   }
 
   if (props.selectedNode) {
-    const fields = [...NODE_BASE_FIELDS, ...nodeTypeFields(props.selectedNode.data.nodeType)];
+    const node = props.selectedNode;
+    const fields = [...NODE_BASE_FIELDS, ...nodeTypeFields(node.data.nodeType)] as FieldDef<string>[];
+    const sections = toSections(fields, NODE_GROUPS);
 
     return (
       <aside className="h-full w-[340px] overflow-auto border-l border-slate-200 bg-slate-50/80 p-3 dark:border-slate-700 dark:bg-slate-900/50">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="inline-flex items-center gap-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
-            <SquarePen size={14} />
-            Node Inspector
-          </h2>
-          <button
-            type="button"
-            onClick={() => props.onResetNode(props.selectedNode!.id)}
-            className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-          >
-            <RotateCcw size={12} />
-            Reset to defaults
-          </button>
+        <div className="sticky top-0 z-10 -mx-3 mb-3 border-b border-slate-200 bg-slate-50/95 px-3 py-3 backdrop-blur dark:border-slate-700 dark:bg-slate-900/95">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h2 className="inline-flex items-center gap-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
+              <SquarePen size={14} />
+              Node Inspector
+            </h2>
+            <button
+              type="button"
+              onClick={() => props.onResetNode(node.id)}
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+            >
+              <RotateCcw size={12} />
+              Reset fields
+            </button>
+          </div>
+
+          <div className="rounded-lg border border-slate-300 bg-white px-2 py-2 dark:border-slate-700 dark:bg-slate-900">
+            <div className="truncate text-xs font-bold text-slate-900 dark:text-slate-100">{node.data.displayName}</div>
+            <div className="truncate text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              {node.data.nodeType}
+            </div>
+          </div>
         </div>
 
-        <div className="mb-3 rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
-          {props.selectedNode.data.nodeType}
+        <div className="space-y-3 pb-4">
+          {sections.map((section) => (
+            <SectionCard key={section.title} title={section.title} description={section.description}>
+              {section.fields.map((field) => (
+                <Field
+                  key={field.key}
+                  field={field}
+                  value={String(node.data[field.key as keyof BankNodeData] ?? '')}
+                  onChange={(value) => props.onUpdateNode(node.id, { [field.key]: value } as Partial<BankNodeData>)}
+                />
+              ))}
+            </SectionCard>
+          ))}
         </div>
-
-        {fields.map((field) => (
-          <Field
-            key={field.key}
-            label={field.label}
-            field={field as FieldDef<string>}
-            value={String(props.selectedNode!.data[field.key as keyof BankNodeData] ?? '')}
-            onChange={(value) => props.onUpdateNode(props.selectedNode!.id, { [field.key]: value } as Partial<BankNodeData>)}
-          />
-        ))}
       </aside>
     );
   }
@@ -125,48 +253,58 @@ export function InspectorPanel(props: Props) {
   const edge = props.selectedEdge!;
   const edgeData = edge.data;
   const showCardFields = edgeData?.rail === 'Card Network';
+  const edgeSections = toSections(EDGE_FIELDS as FieldDef<string>[], EDGE_GROUPS);
 
   return (
     <aside className="h-full w-[340px] overflow-auto border-l border-slate-200 bg-slate-50/80 p-3 dark:border-slate-700 dark:bg-slate-900/50">
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="inline-flex items-center gap-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
-          <Link2 size={14} />
-          Edge Inspector
-        </h2>
-        <button
-          type="button"
-          onClick={() => props.onResetEdge(edge.id)}
-          className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-        >
-          <RotateCcw size={12} />
-          Reset to defaults
-        </button>
+      <div className="sticky top-0 z-10 -mx-3 mb-3 border-b border-slate-200 bg-slate-50/95 px-3 py-3 backdrop-blur dark:border-slate-700 dark:bg-slate-900/95">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h2 className="inline-flex items-center gap-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
+            <Link2 size={14} />
+            Edge Inspector
+          </h2>
+          <button
+            type="button"
+            onClick={() => props.onResetEdge(edge.id)}
+            className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            <RotateCcw size={12} />
+            Reset fields
+          </button>
+        </div>
+
+        <div className="rounded-lg border border-slate-300 bg-white px-2 py-2 text-[11px] text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+          {edge.source} to {edge.target}
+        </div>
       </div>
 
-      {EDGE_FIELDS.map((field) => (
-        <Field
-          key={field.key}
-          label={field.label}
-          field={field as FieldDef<string>}
-          value={String(edgeData?.[field.key as keyof BankEdgeData] ?? '')}
-          onChange={(value) => props.onUpdateEdge(edge.id, { [field.key]: value } as Partial<BankEdgeData>)}
-        />
-      ))}
+      <div className="space-y-3 pb-4">
+        {edgeSections.map((section) => (
+          <SectionCard key={section.title} title={section.title} description={section.description}>
+            {section.fields.map((field) => (
+              <Field
+                key={field.key}
+                field={field}
+                value={String(edgeData?.[field.key as keyof BankEdgeData] ?? '')}
+                onChange={(value) => props.onUpdateEdge(edge.id, { [field.key]: value } as Partial<BankEdgeData>)}
+              />
+            ))}
+          </SectionCard>
+        ))}
 
-      {showCardFields && (
-        <div className="mt-2 rounded-lg border border-blue-200 bg-blue-50 p-2 dark:border-blue-500/30 dark:bg-blue-500/10">
-          <div className="mb-1 text-xs font-semibold text-blue-800 dark:text-blue-200">Card Network Fields</div>
-          {CARD_NETWORK_FIELDS.map((field) => (
-            <Field
-              key={field.key}
-              label={field.label}
-              field={field as FieldDef<string>}
-              value={String(edgeData?.[field.key as keyof BankEdgeData] ?? '')}
-              onChange={(value) => props.onUpdateEdge(edge.id, { [field.key]: value } as Partial<BankEdgeData>)}
-            />
-          ))}
-        </div>
-      )}
+        {showCardFields && (
+          <SectionCard title="Card Network" description="Additional card network details when rail is Card Network.">
+            {CARD_NETWORK_FIELDS.map((field) => (
+              <Field
+                key={field.key}
+                field={field as FieldDef<string>}
+                value={String(edgeData?.[field.key as keyof BankEdgeData] ?? '')}
+                onChange={(value) => props.onUpdateEdge(edge.id, { [field.key]: value } as Partial<BankEdgeData>)}
+              />
+            ))}
+          </SectionCard>
+        )}
+      </div>
     </aside>
   );
 }
