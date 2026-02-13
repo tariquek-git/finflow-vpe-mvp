@@ -10,7 +10,8 @@ import {
   TimingType,
   AccountType,
   FlowDirection,
-  ReconciliationMethod
+  ReconciliationMethod,
+  GridMode
 } from '../types';
 import {
   X,
@@ -31,6 +32,16 @@ interface InspectorProps {
   onUpdateNode: (node: Node) => void;
   onUpdateEdge: (edge: Edge) => void;
   isDarkMode: boolean;
+  canvasSettings: {
+    snapToGrid: boolean;
+    showPorts: boolean;
+    showSwimlanes: boolean;
+    gridMode: GridMode;
+  };
+  onToggleSnapToGrid: () => void;
+  onToggleShowPorts: () => void;
+  onToggleShowSwimlanes: () => void;
+  onSetGridMode: (mode: GridMode) => void;
   onClose: () => void;
 }
 
@@ -159,6 +170,11 @@ const Inspector: React.FC<InspectorProps> = ({
   onUpdateNode,
   onUpdateEdge,
   isDarkMode,
+  canvasSettings,
+  onToggleSnapToGrid,
+  onToggleShowPorts,
+  onToggleShowSwimlanes,
+  onSetGridMode,
   onClose
 }) => {
   const selectedNode = useMemo(
@@ -269,11 +285,65 @@ const Inspector: React.FC<InspectorProps> = ({
 
   if (!selectedNode && !selectedEdge) {
     return (
-      <div className="ff-muted-text flex h-full flex-col items-center justify-center p-8 text-center opacity-70">
-        <MousePointer2 className="mb-4 h-12 w-12" />
-        <p className="text-xs font-semibold uppercase tracking-[0.14em]">
-          Select an object to inspect properties
-        </p>
+      <div className="flex h-full flex-col overflow-y-auto p-4">
+        <div className="ff-soft-divider mb-4 flex items-center gap-2 border-b pb-2">
+          <MousePointer2 className="h-4 w-4 text-[var(--color-accent-1)]" />
+          <h2 className="text-xs font-semibold uppercase tracking-[0.14em]">Canvas Settings</h2>
+        </div>
+
+        <Section title="Layout Controls" icon={<ShieldCheck className="h-3.5 w-3.5" />}>
+          <Field label="Grid Mode">
+            <div className="ff-panel-muted grid grid-cols-3 gap-1 p-1">
+              {(['none', 'lines', 'dots'] as GridMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => onSetGridMode(mode)}
+                  aria-pressed={canvasSettings.gridMode === mode}
+                  className={`ff-focus rounded-md px-2 py-1.5 text-[11px] font-semibold capitalize transition-colors ${
+                    canvasSettings.gridMode === mode
+                      ? 'bg-[var(--color-accent-1)] text-white'
+                      : 'text-[var(--color-text-secondary)] hover:bg-[color:var(--color-surface-3)]'
+                  }`}
+                >
+                  {mode}
+                </button>
+              ))}
+            </div>
+          </Field>
+
+          <Field label="Canvas Toggles">
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={onToggleSnapToGrid}
+                aria-pressed={canvasSettings.snapToGrid}
+                className="ff-btn-secondary ff-focus flex w-full items-center justify-between px-3 py-2 text-xs"
+              >
+                <span>Snap to 20px Grid</span>
+                <span className="ff-chip">{canvasSettings.snapToGrid ? 'On' : 'Off'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={onToggleShowPorts}
+                aria-pressed={canvasSettings.showPorts}
+                className="ff-btn-secondary ff-focus flex w-full items-center justify-between px-3 py-2 text-xs"
+              >
+                <span>Show Handles</span>
+                <span className="ff-chip">{canvasSettings.showPorts ? 'On' : 'Off'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={onToggleShowSwimlanes}
+                aria-pressed={canvasSettings.showSwimlanes}
+                className="ff-btn-secondary ff-focus flex w-full items-center justify-between px-3 py-2 text-xs"
+              >
+                <span>Swimlanes</span>
+                <span className="ff-chip">{canvasSettings.showSwimlanes ? 'On' : 'Off'}</span>
+              </button>
+            </div>
+          </Field>
+        </Section>
       </div>
     );
   }

@@ -17,6 +17,9 @@ test('editor has no critical accessibility violations', async ({ page }) => {
 });
 
 test('primary controls expose accessible names', async ({ page }) => {
+  await expect(page.getByTestId('top-toolbar-panel')).toBeVisible();
+  await expect(page.getByTestId('library-panel')).toBeVisible();
+
   await expect(page.getByRole('button', { name: 'Select tool' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Connect tool' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Text tool' })).toBeVisible();
@@ -28,6 +31,13 @@ test('primary controls expose accessible names', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Reset' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Import JSON' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Export JSON' })).toBeVisible();
+
+  await page.locator('[data-node-id="starter-sponsor"]').click();
+  const nodeContext = page.getByTestId('node-context-toolbar');
+  await expect(nodeContext).toBeVisible();
+  await expect(nodeContext.getByRole('button', { name: 'Edit selected node' })).toBeVisible();
+  await expect(nodeContext.getByRole('button', { name: 'Duplicate selected node' })).toBeVisible();
+  await expect(nodeContext.getByRole('button', { name: 'Delete selected node' })).toBeVisible();
 });
 
 test('toolbar help control is keyboard focusable with visible focus state', async ({ page }) => {

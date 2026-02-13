@@ -87,9 +87,36 @@ const Sidebar = React.memo<SidebarProps>(({ onAddNode, isDarkMode }) => {
     setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
+  const createDragGhost = (label: string) => {
+    const ghost = document.createElement('div');
+    ghost.style.position = 'fixed';
+    ghost.style.top = '-1000px';
+    ghost.style.left = '-1000px';
+    ghost.style.padding = '8px 12px';
+    ghost.style.borderRadius = '10px';
+    ghost.style.border = '1px solid rgba(99, 102, 241, 0.45)';
+    ghost.style.background = isDarkMode ? 'rgba(30, 41, 59, 0.9)' : 'rgba(255, 255, 255, 0.86)';
+    ghost.style.backdropFilter = 'blur(10px)';
+    ghost.style.boxShadow = '0 8px 24px rgba(15, 23, 42, 0.16)';
+    ghost.style.fontSize = '12px';
+    ghost.style.fontWeight = '600';
+    ghost.style.color = isDarkMode ? '#e2e8f0' : '#0f172a';
+    ghost.style.opacity = '0.78';
+    ghost.textContent = label;
+    document.body.appendChild(ghost);
+    return ghost;
+  };
+
   const onDragStartShape = (event: React.DragEvent, type: EntityType) => {
     event.dataTransfer.setData('application/finflow/type', type);
     event.dataTransfer.effectAllowed = 'copy';
+    const ghost = createDragGhost(getShortLabel(type));
+    event.dataTransfer.setDragImage(ghost, 16, 16);
+    window.setTimeout(() => {
+      if (ghost.parentNode) {
+        ghost.parentNode.removeChild(ghost);
+      }
+    }, 0);
   };
 
   const renderShapeButton = (type: EntityType) => (

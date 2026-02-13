@@ -31,6 +31,10 @@ interface FlowCanvasProps {
   activeTool: 'select' | 'draw' | 'text';
   onAddDrawing: (d: DrawingPath) => void;
   onOpenInspector: () => void;
+  onEditSelection: () => void;
+  onDuplicateSelection: () => void;
+  onDeleteSelection: () => void;
+  highlightedNodeId: string | null;
   viewport: ViewportTransform;
   onViewportChange: (v: ViewportTransform) => void;
   showSwimlanes: boolean;
@@ -39,13 +43,16 @@ interface FlowCanvasProps {
 }
 
 const NODE_WIDTH = 180;
-const NODE_HEIGHT = 60;
+const NODE_HEIGHT = 104;
 const ANCHOR_SIZE = 16;
 const SWIMLANE_HEIGHT = 300;
-const GRID_SIZE = 40;
+const SNAP_GRID_SIZE = 20;
+const DOT_GRID_SIZE = 24;
+const LINE_GRID_SIZE = 24;
 const GRID_EXTENT = 12000;
-const MIN_ZOOM = 0.3;
-const MAX_ZOOM = 2.5;
+const MIN_ZOOM = 0.5;
+const MAX_ZOOM = 2.0;
+const ALIGN_THRESHOLD = 6;
 
 const isEditableTarget = (target: EventTarget | null): target is HTMLElement => {
   if (!(target instanceof HTMLElement)) return false;
@@ -61,13 +68,42 @@ const getHandlePosition = (portIdx: number): RFPosition => {
   return RFPosition.Left;
 };
 
+const ENTITY_ACCENT_COLORS: Partial<Record<EntityType, string>> = {
+  [EntityType.SPONSOR_BANK]: '#0ea5e9',
+  [EntityType.ISSUING_BANK]: '#4f46e5',
+  [EntityType.ACQUIRING_BANK]: '#7c3aed',
+  [EntityType.CENTRAL_BANK]: '#2563eb',
+  [EntityType.CORRESPONDENT_BANK]: '#0284c7',
+  [EntityType.CREDIT_UNION]: '#059669',
+  [EntityType.PROGRAM_MANAGER]: '#f59e0b',
+  [EntityType.PROCESSOR]: '#6366f1',
+  [EntityType.GATEWAY]: '#8b5cf6',
+  [EntityType.NETWORK]: '#2563eb',
+  [EntityType.SWITCH]: '#ea580c',
+  [EntityType.WALLET_PROVIDER]: '#9333ea',
+  [EntityType.GATE]: '#ef4444',
+  [EntityType.LIQUIDITY_PROVIDER]: '#0ea5e9',
+  [EntityType.END_POINT]: '#14b8a6'
+};
+
+const isSmartEntityNode = (node: Node) => node.type !== EntityType.ANCHOR && node.type !== EntityType.TEXT_BOX;
+
+const getNodeAccentColor = (node: Node, isDarkMode: boolean) => {
+  if (node.color) return node.color;
+  return ENTITY_ACCENT_COLORS[node.type] || (isDarkMode ? '#818cf8' : '#4f46e5');
+};
+
 const getPortPosition = (node: Node, portIdx: number) => {
   if (node.type === EntityType.ANCHOR) {
     return { x: node.position.x + ANCHOR_SIZE / 2, y: node.position.y + ANCHOR_SIZE / 2 };
   }
 
-  const w = node.width || (node.shape === NodeShape.CIRCLE ? 80 : node.shape === NodeShape.DIAMOND ? 100 : NODE_WIDTH);
-  const h = node.height || (node.shape === NodeShape.CIRCLE ? 80 : node.shape === NodeShape.DIAMOND ? 100 : NODE_HEIGHT);
+  const w = isSmartEntityNode(node)
+    ? (node.width || NODE_WIDTH)
+    : (node.width || (node.shape === NodeShape.CIRCLE ? 80 : node.shape === NodeShape.DIAMOND ? 100 : NODE_WIDTH));
+  const h = isSmartEntityNode(node)
+    ? (node.height || NODE_HEIGHT)
+    : (node.height || (node.shape === NodeShape.CIRCLE ? 80 : node.shape === NodeShape.DIAMOND ? 100 : NODE_HEIGHT));
   const x = node.position.x;
   const y = node.position.y;
   const cx = x + w / 2;
@@ -82,6 +118,12 @@ const getPortPosition = (node: Node, portIdx: number) => {
 const getNodeDimensions = (node: Node) => {
   if (node.type === EntityType.ANCHOR) {
     return { width: ANCHOR_SIZE, height: ANCHOR_SIZE };
+  }
+  if (isSmartEntityNode(node)) {
+    return {
+      width: node.width || NODE_WIDTH,
+      height: node.height || NODE_HEIGHT
+    };
   }
   return {
     width: node.width || (node.shape === NodeShape.CIRCLE ? 80 : node.shape === NodeShape.DIAMOND ? 100 : NODE_WIDTH),
@@ -116,7 +158,16 @@ const DiagramEdge = React.memo(
     const centerOffset = ((totalEdges - 1) * gap) / 2;
     const offsetValue = offsetIndex * gap - centerOffset;
 
-    const strokeColor = edge.isExceptionPath ? '#ef4444' : RAIL_COLORS[edge.rail] || '#94a3b8';
+    const sourceColor = edge.isExceptionPath ? '#ef4444' : getNodeAccentColor(source, isDarkMode);
+    const targetColor = edge.isExceptionPath
+      ? '#f87171'
+      : (target.color || RAIL_COLORS[edge.rail] || getNodeAccentColor(target, isDarkMode));
+    const strokeColor = edge.isExceptionPath ? '#ef4444' : RAIL_COLORS[edge.rail] || sourceColor;
+    const gradientId = `edge-gradient-${edge.id}`;
+    const isActiveFlow =
+      isSelected ||
+      edge.direction === FlowDirection.SETTLEMENT ||
+      edge.label.toLowerCase().includes('funding');
     let strokeDash = '';
     if (edge.style === 'dashed' || edge.isExceptionPath) strokeDash = '6,4';
     if (edge.style === 'dotted') strokeDash = '2,4';
@@ -144,15 +195,37 @@ const DiagramEdge = React.memo(
 
     return (
       <g className="group cursor-pointer" onClick={(e) => { e.stopPropagation(); onSelect(edge.id); }}>
+        <defs>
+          <linearGradient
+            id={gradientId}
+            x1={shiftedStart.x}
+            y1={shiftedStart.y}
+            x2={shiftedEnd.x}
+            y2={shiftedEnd.y}
+            gradientUnits="userSpaceOnUse"
+          >
+            <stop offset="0%" stopColor={sourceColor} />
+            <stop offset="100%" stopColor={targetColor} />
+          </linearGradient>
+        </defs>
         <path d={pathD} stroke="transparent" strokeWidth="16" fill="none" />
         <path
           d={pathD}
-          stroke={strokeColor}
+          stroke={`url(#${gradientId})`}
           strokeWidth={isSelected ? 4 : edge.thickness || 2}
           strokeDasharray={strokeDash}
           fill="none"
           className="transition-all duration-200 ease-out"
         />
+        {isActiveFlow && (
+          <path
+            d={pathD}
+            stroke={isDarkMode ? 'rgba(255,255,255,0.8)' : 'rgba(79,70,229,0.58)'}
+            strokeWidth={2}
+            fill="none"
+            className="ff-edge-flow pointer-events-none"
+          />
+        )}
 
         {edge.sequence !== undefined && edge.sequence > 0 && (
           <g transform={`translate(${midPoint.x}, ${midPoint.y})`}>
@@ -185,9 +258,7 @@ const DiagramEdge = React.memo(
           className="pointer-events-none overflow-visible"
         >
           <div className="flex flex-col items-center justify-center">
-            <div
-              className="ff-panel-muted rounded-md border px-2 py-0.5 text-[8px] font-bold uppercase tracking-tight whitespace-nowrap shadow"
-            >
+            <div className="ff-curve-label-pill whitespace-nowrap text-[8px] font-bold uppercase tracking-tight">
               {edge.label || edge.rail}
               {edge.amount && <span className="ml-1 text-emerald-500">${edge.amount}</span>}
             </div>
@@ -199,18 +270,27 @@ const DiagramEdge = React.memo(
   }
 );
 
+type NodeVisualMeta = {
+  accent: string;
+  tags: string[];
+  statusColor: string;
+};
+
 const DiagramNode = React.memo(
   ({
     node,
+    meta,
     isSelected,
     isDarkMode,
     onMouseDown,
     onClick,
     onPortClick,
     showPorts,
-    connectHighlight
+    connectHighlight,
+    isHighlighted
   }: {
     node: Node;
+    meta: NodeVisualMeta;
     isSelected: boolean;
     isDarkMode: boolean;
     onMouseDown: (e: React.MouseEvent, id: string) => void;
@@ -218,18 +298,16 @@ const DiagramNode = React.memo(
     onPortClick: (e: React.MouseEvent, id: string, idx: number) => void;
     showPorts: boolean;
     connectHighlight: boolean;
+    isHighlighted: boolean;
   }) => {
-    const isDarkNode = ['#020617', '#ef4444', '#6366f1'].includes(node.color || '');
-    const textColor = isDarkNode ? 'text-white' : isDarkMode ? 'text-slate-200' : 'text-slate-900';
-
     if (node.type === EntityType.ANCHOR) {
       return (
         <div
           className={`absolute cursor-grab rounded-full border shadow-sm transition-transform duration-150 hover:scale-125 active:cursor-grabbing ${
             isSelected
-              ? 'bg-teal-600 ring-2 ring-teal-300'
+              ? 'bg-indigo-600 ring-2 ring-indigo-300'
               : node.isConnectorHandle
-                ? 'border-teal-500 bg-teal-100 dark:bg-teal-500/20'
+                ? 'border-indigo-400 bg-indigo-100 dark:bg-indigo-500/20'
                 : isDarkMode
                   ? 'border-slate-500 bg-slate-600'
                   : 'border-slate-400 bg-slate-300'
@@ -240,64 +318,124 @@ const DiagramNode = React.memo(
       );
     }
 
+    const isSmartCard = isSmartEntityNode(node);
+    const titleClass = isDarkMode ? 'text-slate-100' : 'text-slate-900';
+    const showConnectionHandles = (showPorts || isSelected) && isSmartCard;
+
+    if (!isSmartCard) {
+      return (
+        <div
+          data-testid="canvas-node"
+          data-node-id={node.id}
+          data-node-label={node.label}
+          data-selected={isSelected ? 'true' : 'false'}
+          className={`group ff-node-layer absolute flex items-center justify-center rounded-xl border px-3 py-2 text-xs font-semibold transition-all ${
+            isSelected ? 'ring-2 ring-indigo-500 shadow-lg' : ''
+          } ${isHighlighted ? 'ff-drop-pop' : ''}`}
+          style={{
+            left: node.position.x,
+            top: node.position.y,
+            width: node.width || NODE_WIDTH,
+            height: node.height || 64,
+            backgroundColor: isDarkMode ? '#0f172a' : '#ffffff',
+            borderColor: isDarkMode ? '#475569' : '#e2e8f0',
+            color: isDarkMode ? '#e2e8f0' : '#0f172a',
+            zIndex: isSelected ? 99 : 10
+          }}
+          onMouseDown={(e) => onMouseDown(e, node.id)}
+          onClick={onClick}
+        >
+          {node.label}
+        </div>
+      );
+    }
+
     return (
       <div
-        className={`group absolute flex flex-col items-center justify-center rounded-xl border transition-all duration-200 ease-out ${
-          isSelected
-            ? 'scale-[1.02] ring-2 ring-teal-500 shadow-2xl'
-            : isDarkMode
-              ? 'border-slate-700'
-              : 'border-slate-300'
-        } ${connectHighlight ? 'ring-2 ring-blue-300' : ''}`}
+        data-testid="canvas-node"
+        data-node-id={node.id}
+        data-node-label={node.label}
+        data-selected={isSelected ? 'true' : 'false'}
+        className={`group ff-node-layer ff-smart-card absolute flex flex-col overflow-visible ${
+          isSelected ? 'ring-2 ring-indigo-500 shadow-xl' : ''
+        } ${connectHighlight ? 'ring-2 ring-indigo-300' : ''} ${isHighlighted ? 'ff-drop-pop' : ''}`}
         style={{
           left: node.position.x,
           top: node.position.y,
           width: node.width || NODE_WIDTH,
           height: node.height || NODE_HEIGHT,
-          backgroundColor: node.color || (isDarkMode ? '#1f2937' : '#f8fafc'),
           zIndex: isSelected ? 99 : 10
         }}
         onMouseDown={(e) => onMouseDown(e, node.id)}
         onClick={onClick}
       >
-        <div className="pointer-events-none flex h-full w-full flex-col items-center justify-center">
-          <div
-            className={`mb-1 flex h-8 w-8 items-center justify-center rounded-md border shadow-sm ${
-              isDarkNode
-                ? 'border-white/20 bg-white/10'
-                : isDarkMode
-                  ? 'border-slate-600 bg-slate-800/80'
-                  : 'border-slate-200 bg-white'
-            }`}
-          >
-            <span className={isDarkNode ? 'text-white' : ''}>
-              {node.type === EntityType.END_POINT && node.endPointType
-                ? ENDPOINT_ICONS[node.endPointType as EndPointType]
-                : ENTITY_ICONS[node.type]}
-            </span>
+        <div className="pointer-events-none flex h-full w-full flex-col justify-between p-2">
+          <div className="ff-smart-card-header">
+            <div
+              className="flex h-8 w-8 items-center justify-center rounded-lg border"
+              style={{
+                borderColor: isDarkMode ? '#475569' : '#e2e8f0',
+                backgroundColor: isDarkMode ? 'rgba(30,41,59,0.9)' : 'rgba(248,250,252,0.96)',
+                color: meta.accent
+              }}
+            >
+              <span>
+                {node.type === EntityType.END_POINT && node.endPointType
+                  ? ENDPOINT_ICONS[node.endPointType as EndPointType]
+                  : ENTITY_ICONS[node.type]}
+              </span>
+            </div>
+            <div className="min-w-0">
+              <div
+                className={`truncate text-[14px] font-semibold leading-tight tracking-tight ${titleClass}`}
+                title={node.label}
+              >
+                {node.label}
+              </div>
+              <div className="truncate text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                {node.type}
+              </div>
+            </div>
           </div>
-          <span className={`px-2 text-center text-xs font-semibold leading-tight tracking-tight ${textColor}`}>{node.label}</span>
-          {node.accountType && <span className="mt-0.5 text-[7px] font-bold uppercase opacity-50">{node.accountType}</span>}
+          <div className="mt-1 flex flex-wrap items-center gap-1">
+            {meta.tags.slice(0, 2).map((tag) => (
+              <span key={tag} className="ff-smart-card-meta">
+                {tag}
+              </span>
+            ))}
+            {meta.tags.length === 0 && <span className="ff-smart-card-meta">Ready</span>}
+          </div>
+          <div className="mt-2">
+            <div className="ff-smart-card-status" style={{ backgroundColor: meta.statusColor }} />
+          </div>
         </div>
 
-        {showPorts &&
-          [0, 1, 2, 3].map((idx) => (
-            <button
-              key={idx}
-              className="absolute z-50 h-3 w-3 rounded-full border-2 border-white bg-teal-600 opacity-80 shadow-sm transition-all duration-150 hover:scale-150 md:opacity-0 md:group-hover:opacity-100 dark:border-slate-800"
-              style={
-                idx === 0
-                  ? { left: '50%', top: -6, transform: 'translateX(-50%)' }
-                  : idx === 1
-                    ? { right: -6, top: '50%', transform: 'translateY(-50%)' }
-                    : idx === 2
-                      ? { left: '50%', bottom: -6, transform: 'translateX(-50%)' }
-                      : { left: -6, top: '50%', transform: 'translateY(-50%)' }
-              }
-              onMouseDown={(e) => { e.stopPropagation(); }}
-              onClick={(e) => { e.stopPropagation(); onPortClick(e, node.id, idx); }}
-            />
-          ))}
+        {showConnectionHandles &&
+          [0, 1, 2, 3].map((idx) => {
+            const label = idx === 0 ? 'N' : idx === 1 ? 'E' : idx === 2 ? 'S' : 'W';
+            return (
+              <button
+                key={idx}
+                data-testid={`node-handle-${label.toLowerCase()}`}
+                className={`absolute z-50 h-4 w-4 rounded-full border-2 border-white bg-indigo-500 shadow-sm transition-all duration-150 hover:scale-110 dark:border-slate-900 ${
+                  isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                }`}
+                style={
+                  idx === 0
+                    ? { left: '50%', top: -8, transform: 'translateX(-50%)' }
+                    : idx === 1
+                      ? { right: -8, top: '50%', transform: 'translateY(-50%)' }
+                      : idx === 2
+                        ? { left: '50%', bottom: -8, transform: 'translateX(-50%)' }
+                        : { left: -8, top: '50%', transform: 'translateY(-50%)' }
+                }
+                onMouseDown={(e) => { e.stopPropagation(); }}
+                onClick={(e) => { e.stopPropagation(); onPortClick(e, node.id, idx); }}
+                title={`Connection handle ${label}`}
+                aria-label={`Connection handle ${label}`}
+              />
+            );
+          })}
       </div>
     );
   }
@@ -321,6 +459,10 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
   activeTool,
   onAddDrawing,
   onOpenInspector,
+  onEditSelection,
+  onDuplicateSelection,
+  onDeleteSelection,
+  highlightedNodeId,
   viewport,
   onViewportChange,
   showSwimlanes,
@@ -339,7 +481,7 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
     current: Position;
     baseSelection: string[];
   } | null>(null);
-  const [snapGuide, setSnapGuide] = useState<{ x: number | null; y: number | null }>({ x: null, y: null });
+  const [alignmentGuide, setAlignmentGuide] = useState<{ x: number | null; y: number | null }>({ x: null, y: null });
   const [panningState, setPanningState] = useState<{ startX: number; startY: number; baseX: number; baseY: number } | null>(null);
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const [pointerWorld, setPointerWorld] = useState<Position | null>(null);
@@ -377,12 +519,44 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
     [nodes, activeConnectorHandleIds]
   );
 
+  const nodeVisualMeta = useMemo<Record<string, NodeVisualMeta>>(() => {
+    const byNodeId: Record<string, NodeVisualMeta> = {};
+
+    nodes.forEach((node) => {
+      const linked = edges.filter((edge) => edge.sourceId === node.id || edge.targetId === node.id);
+      const hasException = linked.some((edge) => !!edge.isExceptionPath);
+      const hasLinks = linked.length > 0;
+      const firstRail = linked.find((edge) => !!edge.rail)?.rail;
+      const firstTiming = linked.find((edge) => !!edge.timing)?.timing;
+      const tags: string[] = [];
+
+      if (node.accountType) tags.push(node.accountType);
+      if (firstTiming) {
+        tags.push(`Settlement: ${firstTiming}`);
+      } else if (hasLinks) {
+        tags.push(`Links: ${linked.length}`);
+      }
+      if (firstRail) {
+        tags.push(`Rail: ${firstRail}`);
+      }
+
+      byNodeId[node.id] = {
+        accent: getNodeAccentColor(node, isDarkMode),
+        tags,
+        statusColor: hasException ? '#ef4444' : hasLinks ? '#10b981' : '#f59e0b'
+      };
+    });
+
+    return byNodeId;
+  }, [edges, isDarkMode, nodes]);
+
   const startPanning = useCallback(
     (clientX: number, clientY: number) => {
       setPendingConnection(null);
       setDraggingNodes(null);
       setHasRecordedDragHistory(false);
       setSelectionMarquee(null);
+      setAlignmentGuide({ x: null, y: null });
       setPanningState({
         startX: clientX,
         startY: clientY,
@@ -424,7 +598,7 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
       });
       setPendingConnection(null);
       setDraggingNodes(null);
-      setSnapGuide({ x: null, y: null });
+      setAlignmentGuide({ x: null, y: null });
       if (!e.shiftKey) {
         onSelectNodes([]);
         onSelectEdge(null);
@@ -453,6 +627,7 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
     }
 
     if (selectionMarquee) {
+      setAlignmentGuide({ x: null, y: null });
       const nextMarquee = {
         ...selectionMarquee,
         current: worldPos
@@ -490,20 +665,105 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
 
       let appliedDeltaX = deltaX;
       let appliedDeltaY = deltaY;
+      let guideX: number | null = null;
+      let guideY: number | null = null;
 
       if (snapToGrid && !e.altKey && draggingNodes.ids.length > 0) {
         const primaryId = draggingNodes.ids[0];
         const primaryInitial = draggingNodes.initialPositions[primaryId];
         if (primaryInitial) {
-          const snappedPrimaryX = Math.round((primaryInitial.x + deltaX) / GRID_SIZE) * GRID_SIZE;
-          const snappedPrimaryY = Math.round((primaryInitial.y + deltaY) / GRID_SIZE) * GRID_SIZE;
+          const snappedPrimaryX = Math.round((primaryInitial.x + deltaX) / SNAP_GRID_SIZE) * SNAP_GRID_SIZE;
+          const snappedPrimaryY = Math.round((primaryInitial.y + deltaY) / SNAP_GRID_SIZE) * SNAP_GRID_SIZE;
           appliedDeltaX = snappedPrimaryX - primaryInitial.x;
           appliedDeltaY = snappedPrimaryY - primaryInitial.y;
-          setSnapGuide({ x: snappedPrimaryX, y: snappedPrimaryY });
+          guideX = snappedPrimaryX;
+          guideY = snappedPrimaryY;
         }
-      } else {
-        setSnapGuide({ x: null, y: null });
       }
+
+      if (!e.altKey && draggingNodes.ids.length > 0) {
+        const primaryId = draggingNodes.ids[0];
+        const primaryNode = nodes.find((node) => node.id === primaryId);
+        const primaryInitial = draggingNodes.initialPositions[primaryId];
+        if (primaryNode && primaryInitial) {
+          const { width, height } = getNodeDimensions(primaryNode);
+          const projectedPrimary = {
+            x: primaryInitial.x + appliedDeltaX,
+            y: primaryInitial.y + appliedDeltaY
+          };
+          const draggedSet = new Set(draggingNodes.ids);
+          const targetNodes = nodes.filter((node) => !draggedSet.has(node.id));
+
+          const projectedXPoints = [
+            projectedPrimary.x,
+            projectedPrimary.x + width / 2,
+            projectedPrimary.x + width
+          ];
+          const projectedYPoints = [
+            projectedPrimary.y,
+            projectedPrimary.y + height / 2,
+            projectedPrimary.y + height
+          ];
+
+          let bestX: { adjustment: number; value: number; distance: number } | null = null;
+          let bestY: { adjustment: number; value: number; distance: number } | null = null;
+
+          targetNodes.forEach((targetNode) => {
+            const { width: tWidth, height: tHeight } = getNodeDimensions(targetNode);
+            const targetXPoints = [
+              targetNode.position.x,
+              targetNode.position.x + tWidth / 2,
+              targetNode.position.x + tWidth
+            ];
+            const targetYPoints = [
+              targetNode.position.y,
+              targetNode.position.y + tHeight / 2,
+              targetNode.position.y + tHeight
+            ];
+
+            projectedXPoints.forEach((xPoint) => {
+              targetXPoints.forEach((targetX) => {
+                const distance = Math.abs(targetX - xPoint);
+                if (distance > ALIGN_THRESHOLD) return;
+                const candidate = {
+                  adjustment: targetX - xPoint,
+                  value: targetX,
+                  distance
+                };
+                if (!bestX || candidate.distance < bestX.distance) {
+                  bestX = candidate;
+                }
+              });
+            });
+
+            projectedYPoints.forEach((yPoint) => {
+              targetYPoints.forEach((targetY) => {
+                const distance = Math.abs(targetY - yPoint);
+                if (distance > ALIGN_THRESHOLD) return;
+                const candidate = {
+                  adjustment: targetY - yPoint,
+                  value: targetY,
+                  distance
+                };
+                if (!bestY || candidate.distance < bestY.distance) {
+                  bestY = candidate;
+                }
+              });
+            });
+          });
+
+          if (bestX) {
+            appliedDeltaX += bestX.adjustment;
+            guideX = bestX.value;
+          }
+          if (bestY) {
+            appliedDeltaY += bestY.adjustment;
+            guideY = bestY.value;
+          }
+        }
+      }
+
+      setAlignmentGuide({ x: guideX, y: guideY });
 
       draggingNodes.ids.forEach((id) => {
         const initial = draggingNodes.initialPositions[id];
@@ -516,14 +776,14 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
       return;
     }
 
-    setSnapGuide({ x: null, y: null });
+    setAlignmentGuide({ x: null, y: null });
   };
 
   const handleMouseUp = () => {
     setDraggingNodes(null);
     setHasRecordedDragHistory(false);
     setSelectionMarquee(null);
-    setSnapGuide({ x: null, y: null });
+    setAlignmentGuide({ x: null, y: null });
     setPanningState(null);
   };
 
@@ -594,6 +854,15 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
 
   const swimlaneWidth = 5000;
   const gridPatternId = `canvas-grid-${gridMode}-${isDarkMode ? 'dark' : 'light'}`;
+  const gridPatternSize = gridMode === 'dots' ? DOT_GRID_SIZE : LINE_GRID_SIZE;
+  const selectedContextNode =
+    selectedNodeIds.length === 1
+      ? visibleNodes.find((node) => node.id === selectedNodeIds[0]) || null
+      : null;
+  const showNodeContextToolbar =
+    activeTool === 'select' &&
+    !!selectedContextNode &&
+    isSmartEntityNode(selectedContextNode);
   const selectionRect = selectionMarquee
     ? {
         left: Math.min(selectionMarquee.start.x, selectionMarquee.current.x) * viewport.zoom + viewport.x,
@@ -612,9 +881,7 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
         panningState ? 'cursor-grabbing' : isSpacePressed ? 'cursor-grab' : activeTool === 'draw' ? 'cursor-crosshair' : 'cursor-default'
       }`}
       style={{
-        background: isDarkMode
-          ? 'radial-gradient(1200px circle at 16% 0%, #273346 0%, #1b2431 48%, #101923 100%)'
-          : 'radial-gradient(980px circle at 12% 0%, #ffffff 0%, #f6fbfb 42%, #edf4fb 100%)'
+        background: isDarkMode ? '#0b1220' : '#f8fafc'
       }}
       onMouseDown={handleCanvasMouseDown}
       onMouseMove={handleMouseMove}
@@ -622,24 +889,28 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
       onMouseLeave={handleMouseUp}
       onWheel={handleWheel}
     >
-      <div className="absolute inset-0" style={{ transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`, transformOrigin: '0 0' }}>
+      <div
+        data-testid="canvas-transform-layer"
+        className="ff-canvas-transform-layer absolute inset-0"
+        style={{ transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`, transformOrigin: '0 0' }}
+      >
         <svg className="absolute top-0 left-0 w-full h-full overflow-visible">
           {(gridMode === 'lines' || gridMode === 'dots') && (
             <defs>
               {gridMode === 'lines' && (
-                <pattern id={gridPatternId} width={GRID_SIZE} height={GRID_SIZE} patternUnits="userSpaceOnUse">
+                <pattern id={gridPatternId} width={gridPatternSize} height={gridPatternSize} patternUnits="userSpaceOnUse">
                   <path
-                    d={`M ${GRID_SIZE} 0 L 0 0 0 ${GRID_SIZE}`}
+                    d={`M ${gridPatternSize} 0 L 0 0 0 ${gridPatternSize}`}
                     fill="none"
-                    stroke={isDarkMode ? '#3a3f46' : '#d9dde5'}
+                    stroke={isDarkMode ? '#334155' : '#e2e8f0'}
                     strokeWidth="1"
                     opacity="0.85"
                   />
                 </pattern>
               )}
               {gridMode === 'dots' && (
-                <pattern id={gridPatternId} width={GRID_SIZE} height={GRID_SIZE} patternUnits="userSpaceOnUse">
-                  <circle cx="1.5" cy="1.5" r="1.2" fill={isDarkMode ? '#4b5563' : '#b2bccb'} opacity="0.8" />
+                <pattern id={gridPatternId} width={DOT_GRID_SIZE} height={DOT_GRID_SIZE} patternUnits="userSpaceOnUse">
+                  <circle cx="2" cy="2" r="1" fill={isDarkMode ? 'rgba(148,163,184,0.34)' : '#e2e8f0'} opacity="0.95" />
                 </pattern>
               )}
             </defs>
@@ -677,30 +948,32 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
               );
             })}
 
-          {(snapGuide.x !== null || snapGuide.y !== null) && (
+          {(alignmentGuide.x !== null || alignmentGuide.y !== null) && (
             <g className="pointer-events-none">
-              {snapGuide.x !== null && (
+              {alignmentGuide.x !== null && (
                 <line
-                  x1={snapGuide.x}
+                  data-testid="alignment-guide"
+                  x1={alignmentGuide.x}
                   y1={-GRID_EXTENT / 2}
-                  x2={snapGuide.x}
+                  x2={alignmentGuide.x}
                   y2={GRID_EXTENT / 2}
-                  stroke={isDarkMode ? '#60a5fa' : '#2563eb'}
+                  stroke={isDarkMode ? '#f87171' : '#ef4444'}
                   strokeWidth={1}
                   strokeDasharray="4,4"
-                  opacity={0.8}
+                  opacity={0.9}
                 />
               )}
-              {snapGuide.y !== null && (
+              {alignmentGuide.y !== null && (
                 <line
+                  data-testid="alignment-guide"
                   x1={-GRID_EXTENT / 2}
-                  y1={snapGuide.y}
+                  y1={alignmentGuide.y}
                   x2={GRID_EXTENT / 2}
-                  y2={snapGuide.y}
-                  stroke={isDarkMode ? '#60a5fa' : '#2563eb'}
+                  y2={alignmentGuide.y}
+                  stroke={isDarkMode ? '#f87171' : '#ef4444'}
                   strokeWidth={1}
                   strokeDasharray="4,4"
-                  opacity={0.8}
+                  opacity={0.9}
                 />
               )}
             </g>
@@ -771,10 +1044,18 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
           <DiagramNode
             key={node.id}
             node={node}
+            meta={
+              nodeVisualMeta[node.id] || {
+                accent: getNodeAccentColor(node, isDarkMode),
+                tags: [],
+                statusColor: '#f59e0b'
+              }
+            }
             isSelected={selectedNodeIds.includes(node.id)}
             isDarkMode={isDarkMode}
             showPorts={showPorts && activeTool === 'draw'}
             connectHighlight={pendingConnection?.nodeId === node.id}
+            isHighlighted={highlightedNodeId === node.id}
             onMouseDown={(e, id) => {
               if (e.button !== 0 || isSpacePressed) return;
               e.stopPropagation();
@@ -814,6 +1095,66 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
             onPortClick={(_, id, idx) => handlePortClick(id, idx)}
           />
         ))}
+        {showNodeContextToolbar &&
+          selectedContextNode &&
+          (() => {
+            const { width } = getNodeDimensions(selectedContextNode);
+            return (
+              <div
+                data-testid="node-context-toolbar"
+                className="ff-floating-panel absolute z-[110] flex items-center gap-1.5 px-2 py-1"
+                style={{
+                  left: selectedContextNode.position.x + width / 2,
+                  top: selectedContextNode.position.y - 10,
+                  transform: 'translate(-50%, -100%)'
+                }}
+                onMouseDown={(event) => {
+                  event.stopPropagation();
+                }}
+              >
+                <button
+                  onMouseDown={(event) => {
+                    event.stopPropagation();
+                  }}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onEditSelection();
+                    onOpenInspector();
+                  }}
+                  className="ff-btn-secondary ff-focus h-8 px-2.5 text-[11px] font-semibold"
+                  aria-label="Edit selected node"
+                >
+                  Edit
+                </button>
+                <button
+                  onMouseDown={(event) => {
+                    event.stopPropagation();
+                  }}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onDuplicateSelection();
+                  }}
+                  className="ff-btn-secondary ff-focus h-8 px-2.5 text-[11px] font-semibold"
+                  aria-label="Duplicate selected node"
+                >
+                  Duplicate
+                </button>
+                <button
+                  onMouseDown={(event) => {
+                    event.stopPropagation();
+                  }}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onDeleteSelection();
+                  }}
+                  className="ff-btn-secondary ff-focus h-8 px-2.5 text-[11px] font-semibold text-rose-600 dark:text-rose-300"
+                  aria-label="Delete selected node"
+                >
+                  Delete
+                </button>
+              </div>
+            );
+          })()}
       </div>
       {selectionRect && (
         <div

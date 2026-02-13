@@ -236,6 +236,9 @@ type ToastMessage = {
 type RecoveryMeta = {
   lastSavedAt: string;
 };
+type AddNodeOptions = {
+  animateDrop?: boolean;
+};
 
 const parseRecoveryMeta = (value: unknown): RecoveryMeta | null => {
   if (!value || typeof value !== 'object') return null;
@@ -365,6 +368,7 @@ const App: React.FC = () => {
   const [storageWarning, setStorageWarning] = useState<string | null>(null);
   const [hasRecoverySnapshot, setHasRecoverySnapshot] = useState(false);
   const [recoveryLastSavedAt, setRecoveryLastSavedAt] = useState<string | null>(null);
+  const [activeDropNodeId, setActiveDropNodeId] = useState<string | null>(null);
   
   // Link Attributes State
   const [activeEdgeStyle, setActiveEdgeStyle] = useState<'solid' | 'dashed' | 'dotted'>('solid');
@@ -381,6 +385,7 @@ const App: React.FC = () => {
   const hasLoadedFromStorage = useRef(false);
   const saveDiagramTimeoutRef = useRef<number | null>(null);
   const saveLayoutTimeoutRef = useRef<number | null>(null);
+  const dropAnimationTimeoutRef = useRef<number | null>(null);
   const wasMobileViewportRef = useRef(isMobileViewport);
   // --- BASE UTILITIES ---
 
@@ -424,6 +429,14 @@ const App: React.FC = () => {
     }
     wasMobileViewportRef.current = isMobileViewport;
   }, [isMobileViewport]);
+
+  useEffect(() => {
+    return () => {
+      if (dropAnimationTimeoutRef.current !== null) {
+        window.clearTimeout(dropAnimationTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const getCurrentSnapshot = useCallback(() => cloneSnapshot({ nodes, edges, drawings }), [nodes, edges, drawings]);
 
@@ -616,8 +629,9 @@ const App: React.FC = () => {
     };
   }, [viewport, isSidebarOpen]);
 
-  const handleAddNode = useCallback((type: EntityType, pos?: { x: number; y: number }) => {
+  const handleAddNode = useCallback((type: EntityType, pos?: { x: number; y: number }, options?: AddNodeOptions) => {
     pushHistory();
+    let insertedNodeId: string | null = null;
     setNodes((prev) => {
       let finalPos = pos;
       if (!finalPos) {
@@ -642,8 +656,10 @@ const App: React.FC = () => {
           };
       }
 
+      const newNodeId = createId('node');
+      insertedNodeId = newNodeId;
       const newNode: Node = {
-        id: createId('node'),
+        id: newNodeId,
         type,
         label: type,
         shape: type === EntityType.GATE ? NodeShape.DIAMOND : NodeShape.RECTANGLE,
@@ -653,6 +669,16 @@ const App: React.FC = () => {
       };
       return [...prev, newNode];
     });
+
+    if (options?.animateDrop && insertedNodeId) {
+      setActiveDropNodeId(insertedNodeId);
+      if (dropAnimationTimeoutRef.current !== null) {
+        window.clearTimeout(dropAnimationTimeoutRef.current);
+      }
+      dropAnimationTimeoutRef.current = window.setTimeout(() => {
+        setActiveDropNodeId(null);
+      }, 240);
+    }
   }, [pushHistory, getCanvasCenterWorld]);
 
   const handleConnect = useCallback((sourceId: string, targetId: string, spIdx: number, tpIdx: number) => {
@@ -1188,7 +1214,7 @@ const App: React.FC = () => {
 
     const type = e.dataTransfer.getData('application/finflow/type') as EntityType;
     if (type) {
-      handleAddNode(type, { x: worldPos.x - 90, y: worldPos.y - 30 });
+      handleAddNode(type, { x: worldPos.x - 90, y: worldPos.y - 30 }, { animateDrop: true });
     }
   }, [screenToWorld, handleAddConnector, handleAddNode]);
 
@@ -1382,6 +1408,17 @@ const App: React.FC = () => {
     if (!isAIEnabled) return;
     void import('@google/genai');
   }, [isAIEnabled]);
+  const handleEditSelectionFromCanvas = useCallback(() => {
+    if (selectedNodeIds.length !== 1) return;
+    setIsInspectorOpen(true);
+    if (isMobileViewport) {
+      setIsSidebarOpen(false);
+    }
+  }, [isMobileViewport, selectedNodeIds.length]);
+  const handleDeleteSelectionFromCanvas = useCallback(() => {
+    if (selectedNodeIds.length === 0) return;
+    handleDelete();
+  }, [handleDelete, selectedNodeIds.length]);
   const backupStatusTimestamp = formatBackupTimestamp(recoveryLastSavedAt);
   const backupStatusText =
     hasRecoverySnapshot && backupStatusTimestamp
@@ -1393,10 +1430,11 @@ const App: React.FC = () => {
   return (
       <div className={`finflow-app-shell ff-shell flex h-screen flex-col overflow-hidden ${isDarkMode ? 'dark' : ''}`}>
         <header
-          className="ff-panel ff-motion-in surface-ring z-40 mx-2 mt-2 flex shrink-0 flex-col gap-3 rounded-lg px-3 py-2 md:mx-3 md:flex-row md:items-center md:justify-between"
+          data-testid="top-toolbar-panel"
+          className="ff-floating-panel ff-motion-in z-40 mx-2 mt-2 flex shrink-0 flex-col gap-3 px-3 py-2 md:mx-3 md:mt-3 md:flex-row md:items-center md:justify-between"
         >
           <div className="flex items-center gap-2 md:gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-teal-700 text-lg font-bold text-white shadow-sm">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-lg font-bold text-white shadow-sm">
               F
             </div>
             <div>
@@ -1444,7 +1482,7 @@ const App: React.FC = () => {
             {isAIEnabled ? (
               <div className="group relative">
                 <Sparkles
-                  className={`absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-teal-600 ${
+                  className={`absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-indigo-500 ${
                     isAILoading ? 'animate-pulse' : 'opacity-70'
                   }`}
                 />
@@ -1620,7 +1658,7 @@ const App: React.FC = () => {
           ))}
         </div>
 
-        <main className="relative flex flex-1 overflow-hidden px-2 pb-2 pt-2 md:px-3">
+        <main className="relative flex flex-1 overflow-hidden px-2 pb-2 pt-2 md:px-3 md:pb-3 md:pt-3">
           {isMobileViewport && (isSidebarOpen || isInspectorOpen) && (
             <button
               type="button"
@@ -1633,13 +1671,14 @@ const App: React.FC = () => {
             />
           )}
           <div
+            data-testid="library-panel"
             className={`flex flex-col overflow-hidden rounded-lg border transition-all duration-300 ${
               isMobileViewport
                 ? `absolute inset-y-0 left-0 z-40 w-72 transform ${
                     isSidebarOpen ? 'translate-x-0 shadow-xl' : '-translate-x-[110%]'
                   } transition-transform`
                 : `${isSidebarOpen ? 'w-72' : 'w-0'} relative z-30`
-            } ff-panel`}
+            } ff-floating-panel`}
           >
             <Sidebar
               onAddNode={(type) => {
@@ -1705,6 +1744,10 @@ const App: React.FC = () => {
                   }
                 }
               }}
+              onDuplicateSelection={handleDuplicateSelection}
+              onDeleteSelection={handleDeleteSelectionFromCanvas}
+              onEditSelection={handleEditSelectionFromCanvas}
+              highlightedNodeId={activeDropNodeId}
               onAddNode={handleAddNode}
               showSwimlanes={showSwimlanes}
               swimlaneLabels={swimlaneLabels}
@@ -1712,16 +1755,17 @@ const App: React.FC = () => {
               viewport={viewport}
               onViewportChange={setViewport}
             />
+            <div className="ff-vignette" />
 
             <div className="absolute left-2 top-2 z-20 max-w-[calc(100%-1rem)] md:left-3 md:top-3">
               {isQuickStartVisible && (
                 <div
                   data-testid="quickstart-panel"
-                  className="ff-panel ff-elevated ff-motion-in mb-2 w-[min(22rem,calc(100vw-1rem))] border-l-4 border-l-teal-600 px-3 py-3"
+                  className="ff-panel ff-elevated ff-motion-in mb-2 w-[min(22rem,calc(100vw-1rem))] border-l-4 border-l-indigo-500 px-3 py-3"
                 >
                   <div className="mb-2 flex items-start justify-between gap-2">
                     <div>
-                      <h2 className="text-xs font-bold uppercase tracking-[0.14em] text-teal-600 dark:text-teal-300">
+                      <h2 className="text-xs font-bold uppercase tracking-[0.14em] text-indigo-600 dark:text-indigo-300">
                         Quick Start
                       </h2>
                       <p className="mt-1 text-[11px] leading-relaxed">
@@ -2173,6 +2217,16 @@ const App: React.FC = () => {
                 onUpdateNode={handleUpdateNode}
                 onUpdateEdge={handleUpdateEdge}
                 isDarkMode={isDarkMode}
+                canvasSettings={{
+                  snapToGrid,
+                  showPorts,
+                  showSwimlanes,
+                  gridMode
+                }}
+                onToggleSnapToGrid={() => setSnapToGrid((prev) => !prev)}
+                onToggleShowPorts={toggleShowPorts}
+                onToggleShowSwimlanes={handleToggleSwimlanes}
+                onSetGridMode={(mode) => setGridMode(mode)}
                 onClose={() => setIsInspectorOpen(false)}
               />
             )}

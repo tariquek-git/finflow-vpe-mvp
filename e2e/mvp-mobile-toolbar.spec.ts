@@ -9,6 +9,10 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('mobile toolbar controls are discoverable and clickable', async ({ page }) => {
+  const topPanel = page.getByTestId('top-toolbar-panel');
+  await expect(topPanel).toBeVisible();
+  await expect(topPanel).toHaveClass(/ff-floating-panel/);
+
   const strip = page.getByTestId('primary-actions-strip');
   await expect(strip).toBeVisible();
   await expect(strip).toContainText('Primary Actions');
@@ -24,6 +28,13 @@ test('mobile toolbar controls are discoverable and clickable', async ({ page }) 
   await expect(importJson).toBeVisible();
   await expect(exportJson).toBeVisible();
   await expect(help).toBeVisible();
+
+  const viewport = page.viewportSize();
+  if (!viewport) throw new Error('Viewport unavailable');
+  const exportBox = await exportJson.boundingBox();
+  if (!exportBox) throw new Error('Export button box unavailable');
+  expect(exportBox.x).toBeGreaterThanOrEqual(0);
+  expect(exportBox.x + exportBox.width).toBeLessThanOrEqual(viewport.width + 1);
 
   await restore.click();
   await expect(page.getByTestId('toast-message').first()).toContainText('No recovery snapshot yet');

@@ -59,3 +59,12 @@ jobs:
 
       - name: MVP recovery status tests
         run: npm run test:mvp:recovery-status
+
+      - name: VPE canvas mechanics tests
+        run: npm run test:vpe:canvas-mechanics
+
+      - name: VPE node context tests
+        run: npm run test:vpe:node-context
+
+      - name: Full QA regression
+        run: npm run test:qa
