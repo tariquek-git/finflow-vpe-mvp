@@ -109,6 +109,16 @@ describe('useDiagramStore', () => {
     expect(useDiagramStore.getState().nodes).toHaveLength(1);
   });
 
+  test('ui-only changes are excluded from undo history', () => {
+    const history = useDiagramStore.temporal.getState();
+    expect(history.pastStates).toHaveLength(0);
+
+    useDiagramStore.getState().patchUI({ showMiniMap: true, snapToGrid: true });
+
+    const after = useDiagramStore.temporal.getState();
+    expect(after.pastStates).toHaveLength(0);
+  });
+
   test('reorderLanes updates order indices', () => {
     const laneIds = useDiagramStore
       .getState()

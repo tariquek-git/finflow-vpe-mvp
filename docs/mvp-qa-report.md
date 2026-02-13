@@ -35,4 +35,45 @@ Date: 2026-02-12
 
 - Latest E2E report: `docs/mvp-qa-e2e-report.md`
 - Latest E2E JSON: `docs/mvp-qa-e2e-report.json`
-- Latest screenshots/downloads: `qa-artifacts/2026-02-12T21-51-03-063Z`
+- Latest screenshots/downloads: `qa-artifacts/2026-02-13T03-18-04-944Z`
+
+## Pilot Findings (Template)
+
+Use this section during local pilot runs. Record only `P0`/`P1` issues.
+
+### Pilot Run
+
+- Date:
+- Tester:
+- Scenario:
+- Build/Tag: `v0.1.0-qa.1`
+- Result: PASS / FAIL
+
+### Issues
+
+Copy this block for each issue:
+
+```md
+- ID:
+- Priority: P0 / P1
+- Area: (A1-A6, B1-B4, C1-C3, D1-D3)
+- Steps to Reproduce:
+  1.
+  2.
+  3.
+- Expected:
+- Actual:
+- Evidence: (screenshot path or artifact file)
+- Status: Open / Fixed / Verified
+```
+
+### Pilot Signoff
+
+- P0 count:
+- P1 count:
+- Go/No-Go:
+- Notes:
+
+## Release Notes
+
+- 2026-02-13: `v0.1.1` local patch release prepared (beforeunload guard, undo/redo temporal scope narrowed to nodes+edges, pinned `@xyflow/react`, hardened Vercel headers). Full gate PASS.

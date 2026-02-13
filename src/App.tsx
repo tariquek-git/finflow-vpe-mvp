@@ -9,6 +9,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import clsx from 'clsx';
+import { useEffect } from 'react';
 import { GenericBankNode } from './components/nodes/GenericBankNode';
 import { SwimlaneOverlay } from './components/canvas/SwimlaneOverlay';
 import { TopBar } from './components/panels/TopBar';
@@ -70,6 +71,19 @@ function Workspace() {
     canUndo,
     canRedo,
   } = useWorkspaceController();
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (nodes.length === 0) {
+        return;
+      }
+      event.preventDefault();
+      event.returnValue = 'You have unsaved diagram changes.';
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [nodes.length]);
 
   const backgroundVariant = ui.backgroundMode === 'grid' ? BackgroundVariant.Lines : BackgroundVariant.Dots;
 

@@ -352,14 +352,10 @@ export const useDiagramStore = create<DiagramState>()(
       partialize: (state) => ({
         nodes: state.nodes,
         edges: state.edges,
-        lanes: state.lanes,
-        ui: state.ui,
       }),
       equality: (previousState, currentState) =>
         previousState.nodes === currentState.nodes &&
-        previousState.edges === currentState.edges &&
-        previousState.lanes === currentState.lanes &&
-        previousState.ui === currentState.ui,
+        previousState.edges === currentState.edges,
       limit: 100,
     },
   ),
