@@ -37,10 +37,11 @@ All commands passed with exit code `0`:
   - `docs/mvp-qa-report.md`
   - `docs/CHANGELOG_v0.2.2-local.md`
 - Review artifacts (generated during release cut):
-  - `/Users/tarique/Downloads/banking-diagram-mvp_v0.2.2_handoff_<timestamp>.tar.gz`
-  - `/Users/tarique/Downloads/banking-diagram-mvp_v0.2.2_handoff_<timestamp>.zip`
+  - `/Users/tarique/Downloads/banking-diagram-mvp_v0.2.2_handoff_20260213-132726.tar.gz`
+  - `/Users/tarique/Downloads/banking-diagram-mvp_v0.2.2_handoff_20260213-132726.zip`
 
 ## Notes
 - View controls are centralized in Inspector `Canvas` tab to reduce duplicated command surfaces.
 - Topbar and bottom bar now separate global actions from status-only controls.
 - Existing QA-critical labels and test IDs remain preserved.
+- Release decision: GO for local MVP promotion path.

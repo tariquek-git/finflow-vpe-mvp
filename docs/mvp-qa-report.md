@@ -29,3 +29,8 @@ Date: 2026-02-13
 - `v0.2.0`: modern SaaS UI/UX consolidation completed with no schema/payload contract changes.
 - `v0.2.1`: interaction clarity + de-clutter hardening with no schema/payload contract changes.
 - `v0.2.2`: MVP de-clutter and public-ready polish pass with no schema/payload contract changes.
+
+## Release Decision
+- Artifact stamp: `20260213-132726`
+- Local release tag target: `v0.2.2`
+- Go / No-Go: GO
