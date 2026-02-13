@@ -30,7 +30,7 @@ All commands passed with exit code `0`:
 ## Notes
 - UX polish includes mobile toolbar clarity, quick-start Help reopen control, backup recency status copy, and expanded UX/a11y test coverage.
 - Remote cutover state (`/Users/tarique/Documents/banking-diagram-mvp-origin.git`):
-  - `main` now points to `2686e602419c07148425d3df0421e0722336f849`
+  - `main` now points to `685c1e75a00380578056da6b9d86baa86ca16c1d`
   - Legacy branch captured as `main-legacy-2026-02-13` at `6648ce311aed74046bedd3b832bb7d23448f37aa`
   - `codex/bootstrap-ci-gate` remains as an alias branch because remote branch deletion is blocked by policy in this environment.
 - Public tagging state:

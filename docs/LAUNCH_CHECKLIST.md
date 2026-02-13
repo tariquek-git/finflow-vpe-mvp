@@ -28,7 +28,7 @@
 
 ## GitHub
 - [x] Back up legacy `main` as `main-legacy-2026-02-13`
-- [x] Promote `codex/bootstrap-ci-gate` lineage to `main` (remote `main` now points to `2686e60`)
+- [x] Promote `codex/bootstrap-ci-gate` lineage to `main` (remote `main` now points to `685c1e7`)
 - [ ] Open PR to `main` (skipped due direct cutover path)
 - [ ] Require `qa` branch protection on `main` (pending hosted Git provider access)
 - [ ] Delete remote `codex/bootstrap-ci-gate` alias (blocked by remote push policy)
