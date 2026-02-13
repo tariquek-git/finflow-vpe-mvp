@@ -127,7 +127,9 @@ const DetailToggle: React.FC<{
   onClick: () => void;
 }> = ({ isActive, label, onClick }) => (
   <button
+    type="button"
     onClick={onClick}
+    aria-pressed={isActive}
     className={`ff-focus rounded-md px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] transition-colors ${
       isActive
         ? 'bg-[var(--color-accent-1)] text-white shadow-sm'
@@ -384,7 +386,7 @@ const Inspector: React.FC<InspectorProps> = ({
               onClick={() => setDetailLevel('advanced')}
             />
           </div>
-          <button onClick={onClose} className="ff-btn-ghost ff-focus p-1.5">
+          <button type="button" onClick={onClose} aria-label="Close inspector panel" className="ff-btn-ghost ff-focus p-1.5">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -409,9 +411,11 @@ const Inspector: React.FC<InspectorProps> = ({
               <div className="flex gap-2 pt-1">
                 {PRESET_COLORS.map((color) => (
                   <button
+                    type="button"
                     key={color.hex}
                     onClick={() => nodeForm.setValue('color', color.hex, { shouldDirty: true, shouldValidate: true })}
                     title={color.label}
+                    aria-label={`Set node color to ${color.label}`}
                     className={`ff-focus h-7 w-7 rounded-full border-2 transition-transform hover:scale-110 ${
                       selectedNodeColor === color.hex
                         ? 'scale-110 border-blue-500 shadow-lg'
@@ -507,6 +511,7 @@ const Inspector: React.FC<InspectorProps> = ({
               </Field>
               <div className="flex flex-col gap-2 pt-1">
                 <button
+                  type="button"
                   onClick={() =>
                     edgeForm.setValue('isFX', !edgeIsFX, {
                       shouldDirty: true,
@@ -522,6 +527,7 @@ const Inspector: React.FC<InspectorProps> = ({
                   Foreign Exchange (FX)
                 </button>
                 <button
+                  type="button"
                   onClick={() =>
                     edgeForm.setValue('isExceptionPath', !edgeIsExceptionPath, {
                       shouldDirty: true,

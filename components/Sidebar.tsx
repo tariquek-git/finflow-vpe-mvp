@@ -161,6 +161,7 @@ const Sidebar = React.memo<SidebarProps>(({ onAddNode, isDarkMode }) => {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search blocks..."
+            aria-label="Search components"
             className="ff-input ff-focus h-9 w-full pl-8 pr-2 text-xs outline-none"
           />
         </div>
@@ -176,9 +177,11 @@ const Sidebar = React.memo<SidebarProps>(({ onAddNode, isDarkMode }) => {
             {sections.map((section) => (
               <div key={section.key} className="ff-surface-card overflow-hidden border">
                 <button
+                  type="button"
                   onClick={() => toggleSection(section.key)}
                   aria-expanded={!!openSections[section.key]}
                   aria-controls={`library-section-${section.key}`}
+                  aria-label={`${openSections[section.key] ? 'Collapse' : 'Expand'} ${section.title} section`}
                   className={`ff-focus flex w-full items-center justify-between px-3 py-2.5 text-[11px] font-semibold uppercase tracking-[0.12em] transition-colors ${
                     openSections[section.key]
                       ? 'bg-[color:var(--color-surface-3)] text-[var(--color-text-primary)]'

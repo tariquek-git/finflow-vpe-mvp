@@ -26,3 +26,11 @@ This folder captures visual baselines for the modern UI refresh.
 - `after/after-bottom-toolbar-desktop-advanced.png`
 - `after/after-bottom-toolbar-mobile-default.png`
 - `after/after-bottom-toolbar-mobile-advanced.png`
+- `after/after-sidebar-polish-desktop-light.png`
+- `after/after-sidebar-polish-desktop-dark.png`
+- `after/after-sidebar-polish-mobile-light.png`
+- `after/after-sidebar-polish-mobile-dark.png`
+- `after/after-inspector-polish-desktop-light.png`
+- `after/after-inspector-polish-desktop-dark.png`
+- `after/after-inspector-polish-mobile-light.png`
+- `after/after-inspector-polish-mobile-dark.png`
