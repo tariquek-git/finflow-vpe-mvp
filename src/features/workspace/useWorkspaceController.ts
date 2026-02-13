@@ -1,5 +1,5 @@
 import type { OnConnect, ReactFlowInstance } from '@xyflow/react';
-import { useCallback, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from 'react';
 import { NODE_TYPES, type BankEdge, type BankNode, type DiagramPayload, type NodeType } from '../../types';
 import { downloadJson, normalizePayload, parseJsonFile } from '../../utils/io';
 import { applyDagreLayout } from '../../utils/layout';
@@ -47,6 +47,9 @@ export function useWorkspaceController() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
+  const pendingViewportNormalizationRef = useRef(false);
+  const pendingViewportNodeIdsRef = useRef<string[] | null>(null);
+  const viewportNormalizationRunIdRef = useRef(0);
   const { toasts, pushToast } = useToastQueue();
   const history = useDiagramStore.temporal.getState();
   const canUndo = history.pastStates.length > 0;
@@ -57,6 +60,92 @@ export function useWorkspaceController() {
   const clearHistory = useCallback(() => {
     useDiagramStore.temporal.getState().clear();
   }, []);
+
+  const runViewportNormalization = useCallback(
+    async (nodeIds?: string[] | null, runId?: number) => {
+      if (!rfInstance) {
+        return;
+      }
+
+      const expectedRunId = runId ?? viewportNormalizationRunIdRef.current;
+      const targetNodeIds = nodeIds?.length ? [...nodeIds] : null;
+      const frame = () =>
+        new Promise<void>((resolve) => {
+          window.requestAnimationFrame(() => resolve());
+        });
+      const hasStableMeasurements = () => {
+        const currentNodes = rfInstance.getNodes();
+        if (!currentNodes.length) {
+          return false;
+        }
+
+        const trackedNodes = targetNodeIds?.length
+          ? currentNodes.filter((node) => targetNodeIds.includes(node.id))
+          : currentNodes;
+        if (!trackedNodes.length) {
+          return false;
+        }
+
+        if (targetNodeIds?.length && trackedNodes.length !== targetNodeIds.length) {
+          return false;
+        }
+
+        return trackedNodes.every(
+          (node) => (node.measured?.width ?? node.width ?? 0) > 0 && (node.measured?.height ?? node.height ?? 0) > 0,
+        );
+      };
+
+      for (let attempt = 0; attempt < 12; attempt += 1) {
+        if (viewportNormalizationRunIdRef.current !== expectedRunId) {
+          return;
+        }
+        if (hasStableMeasurements()) {
+          break;
+        }
+        await frame();
+      }
+
+      if (viewportNormalizationRunIdRef.current !== expectedRunId) {
+        return;
+      }
+
+      const fitOptions = {
+        nodes: targetNodeIds?.map((id) => ({ id })),
+        padding: 0.35,
+        maxZoom: 1.1,
+        duration: 260,
+        includeHiddenNodes: false,
+      };
+      await rfInstance.fitView(fitOptions);
+      await frame();
+      if (viewportNormalizationRunIdRef.current !== expectedRunId) {
+        return;
+      }
+
+      await rfInstance.fitView({ ...fitOptions, duration: 0 });
+      if (viewportNormalizationRunIdRef.current === expectedRunId) {
+        pendingViewportNodeIdsRef.current = null;
+      }
+    },
+    [rfInstance],
+  );
+
+  const normalizeViewportAfterHydrate = useCallback((nodeIds?: string[]) => {
+    pendingViewportNormalizationRef.current = true;
+    pendingViewportNodeIdsRef.current = nodeIds ?? null;
+    viewportNormalizationRunIdRef.current += 1;
+    void runViewportNormalization(nodeIds, viewportNormalizationRunIdRef.current);
+  }, [runViewportNormalization]);
+
+  useEffect(() => {
+    if (!rfInstance || !pendingViewportNormalizationRef.current || nodes.length === 0) {
+      return;
+    }
+    pendingViewportNormalizationRef.current = false;
+    viewportNormalizationRunIdRef.current += 1;
+    void runViewportNormalization(pendingViewportNodeIdsRef.current, viewportNormalizationRunIdRef.current);
+    pendingViewportNodeIdsRef.current = null;
+  }, [nodes.length, rfInstance, runViewportNormalization]);
 
   const undo = useCallback(() => {
     useDiagramStore.temporal.getState().undo();
@@ -139,12 +228,13 @@ export function useWorkspaceController() {
       } else {
         hydrate(payload);
         clearHistory();
+        normalizeViewportAfterHydrate(payload.nodes.map((node) => node.id));
         pushToast('Diagram imported', 'success');
       }
 
       event.target.value = '';
     },
-    [clearHistory, hydrate, pushToast],
+    [clearHistory, hydrate, normalizeViewportAfterHydrate, pushToast],
   );
 
   const loadSample = useCallback(async () => {
@@ -158,11 +248,12 @@ export function useWorkspaceController() {
       }
       hydrate(payload);
       clearHistory();
+      normalizeViewportAfterHydrate(payload.nodes.map((node) => node.id));
       pushToast('Sample loaded', 'success');
     } catch {
       pushToast('Sample load failed', 'error');
     }
-  }, [clearHistory, hydrate, pushToast]);
+  }, [clearHistory, hydrate, normalizeViewportAfterHydrate, pushToast]);
 
   const currentViewport = useCallback(
     (): HTMLElement | null => viewportRef.current?.querySelector('.react-flow__viewport') as HTMLElement | null,

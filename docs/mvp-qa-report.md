@@ -1,12 +1,13 @@
 # MVP QA Report
 
-Date: 2026-02-12
+Date: 2026-02-13
 
 ## Automated Gate
 
 - `npm run qa:mvp`: PASS
 - `npm run qa:mvp:e2e`: PASS
-- `npm run qa:mvp:full`: PASS
+- `npm run qa:mvp:pilot`: PASS
+- Full validation sequence (`lint`, `test -- --run`, `build`, `qa:mvp:e2e`, `qa:mvp:pilot`): PASS
 
 ## Acceptance Status
 
@@ -35,7 +36,9 @@ Date: 2026-02-12
 
 - Latest E2E report: `docs/mvp-qa-e2e-report.md`
 - Latest E2E JSON: `docs/mvp-qa-e2e-report.json`
-- Latest screenshots/downloads: `qa-artifacts/2026-02-13T03-18-04-944Z`
+- Latest E2E screenshots/downloads: `qa-artifacts/2026-02-13T03-55-26-004Z`
+- Latest deep pilot summary: `qa-artifacts/deep-pilot/2026-02-13T03-55-34-487Z/deep-pilot-summary.md`
+- Latest deep pilot JSON: `qa-artifacts/deep-pilot/2026-02-13T03-55-34-487Z/deep-pilot-summary.json`
 
 ## Pilot Findings (Template)
 
@@ -43,37 +46,24 @@ Use this section during local pilot runs. Record only `P0`/`P1` issues.
 
 ### Pilot Run
 
-- Date:
-- Tester:
-- Scenario:
-- Build/Tag: `v0.1.0-qa.1`
-- Result: PASS / FAIL
+- Date: 2026-02-13
+- Tester: Codex deep pilot runner
+- Scenario: `Load Sample`, save/import/new lifecycle, edge inspector editability, graph-only undo, export variants, 75-node stress + repeated auto-layout, reload persistence, beforeunload lifecycle
+- Build/Tag: `v0.1.2-rc1`
+- Result: PASS (`PASSED=9`, `FAILED=0`)
 
 ### Issues
 
-Copy this block for each issue:
-
-```md
-- ID:
-- Priority: P0 / P1
-- Area: (A1-A6, B1-B4, C1-C3, D1-D3)
-- Steps to Reproduce:
-  1.
-  2.
-  3.
-- Expected:
-- Actual:
-- Evidence: (screenshot path or artifact file)
-- Status: Open / Fixed / Verified
-```
+- No `P0` or `P1` functional blockers found in the latest deep pilot run.
 
 ### Pilot Signoff
 
-- P0 count:
-- P1 count:
-- Go/No-Go:
-- Notes:
+- P0 count: 0
+- P1 count: 0
+- Go/No-Go: GO
+- Notes: Viewport normalization after hydrate/import/sample is stable; edge and node interactions were reachable through sample/import workflows in deep pilot.
 
 ## Release Notes
 
 - 2026-02-13: `v0.1.1` local patch release prepared (beforeunload guard, undo/redo temporal scope narrowed to nodes+edges, pinned `@xyflow/react`, hardened Vercel headers). Full gate PASS.
+- 2026-02-13: `v0.1.2` local patch release prepared (deterministic post-hydrate viewport normalization + repeatable deep pilot harness). Full validation + deep pilot PASS.

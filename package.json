@@ -12,6 +12,7 @@
     "test:watch": "vitest",
     "qa:mvp": "npm run lint && npm run test -- --run && npm run build",
     "qa:mvp:e2e": "node scripts/mvp-qa-e2e.mjs",
+    "qa:mvp:pilot": "node scripts/deep-pilot-qa.mjs",
     "qa:mvp:full": "npm run qa:mvp && npm run qa:mvp:e2e"
   },
   "dependencies": {

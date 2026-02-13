@@ -17,10 +17,10 @@ Date: 2026-02-13
 - B3 LocalStorage restore on reload: PASS - nodes=2
 - B4 New resets graph and UI defaults: PASS
 - C1C2C3 PNG/PDF export toggles and output: PASS
-- D1D2D3 75-node import and auto-layout: PASS - autoLayoutClickToStable~588ms
+- D1D2D3 75-node import and auto-layout: PASS - autoLayoutClickToStable~720ms
 
 ## Summary
 
 - Passed: 14
 - Failed: 0
-- Artifacts: `qa-artifacts/2026-02-13T03-18-04-944Z`
+- Artifacts: `qa-artifacts/2026-02-13T03-55-26-004Z`
