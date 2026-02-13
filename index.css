@@ -206,6 +206,160 @@ body {
   background: var(--ui-surface-soft-dark);
 }
 
+.ui-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.ui-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-height: 2rem;
+  min-width: 2rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--ui-border-light);
+  background: var(--ui-surface-light);
+  color: var(--ui-muted-light);
+  padding: 0.35rem 0.5rem;
+  transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+
+.ui-icon-button:hover {
+  background: var(--ui-surface-soft-light);
+}
+
+.ui-icon-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.ui-icon-button.is-active {
+  border-color: color-mix(in srgb, var(--ui-focus-light) 55%, var(--ui-border-light));
+  background: color-mix(in srgb, #2563eb 12%, #ffffff);
+  color: #1d4ed8;
+}
+
+.dark .ui-icon-button {
+  border-color: var(--ui-border-dark);
+  background: var(--ui-surface-dark);
+  color: var(--ui-muted-dark);
+}
+
+.dark .ui-icon-button:hover {
+  background: var(--ui-surface-soft-dark);
+}
+
+.dark .ui-icon-button.is-active {
+  border-color: color-mix(in srgb, var(--ui-focus-dark) 50%, var(--ui-border-dark));
+  background: color-mix(in srgb, #0ea5e9 18%, #0f172a);
+  color: #7dd3fc;
+}
+
+.toolbar-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  height: 2rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--ui-border-light);
+  background: var(--ui-surface-light);
+  color: var(--ui-muted-light);
+  padding: 0 0.6rem;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+
+.toolbar-chip:hover {
+  background: var(--ui-surface-soft-light);
+}
+
+.toolbar-chip:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.toolbar-chip.is-active {
+  border-color: color-mix(in srgb, var(--ui-focus-light) 55%, var(--ui-border-light));
+  background: color-mix(in srgb, #2563eb 12%, #ffffff);
+  color: #1d4ed8;
+}
+
+.dark .toolbar-chip {
+  border-color: var(--ui-border-dark);
+  background: var(--ui-surface-dark);
+  color: var(--ui-muted-dark);
+}
+
+.dark .toolbar-chip:hover {
+  background: var(--ui-surface-soft-dark);
+}
+
+.dark .toolbar-chip.is-active {
+  border-color: color-mix(in srgb, var(--ui-focus-dark) 50%, var(--ui-border-dark));
+  background: color-mix(in srgb, #0ea5e9 18%, #0f172a);
+  color: #7dd3fc;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  min-height: 1.8rem;
+  border-radius: 0.5rem;
+  border: 1px solid transparent;
+  padding: 0 0.55rem;
+  font-weight: 600;
+  font-size: 10px;
+  color: inherit;
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--ui-surface-soft-light) 85%, transparent);
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+
+.status-chip:hover {
+  border-color: var(--ui-border-light);
+}
+
+.status-chip.is-active {
+  border-color: color-mix(in srgb, var(--ui-focus-light) 45%, var(--ui-border-light));
+  background: color-mix(in srgb, #2563eb 12%, #ffffff);
+}
+
+.status-chip.status-readonly {
+  cursor: default;
+}
+
+.dark .status-chip {
+  background: color-mix(in srgb, var(--ui-surface-soft-dark) 85%, transparent);
+}
+
+.dark .status-chip:hover {
+  border-color: var(--ui-border-dark);
+}
+
+.dark .status-chip.is-active {
+  border-color: color-mix(in srgb, var(--ui-focus-dark) 45%, var(--ui-border-dark));
+  background: color-mix(in srgb, #0ea5e9 16%, #0f172a);
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;

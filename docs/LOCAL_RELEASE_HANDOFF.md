@@ -4,6 +4,7 @@
 - Release branch of record: `codex/uiux-modern-saas-v020`
 - Local remote source of truth: `/Users/tarique/Documents/banking-diagram-mvp-origin.git`
 - Release tag of record: `v0.2.0`
+- Release commit: `0fa2b16061c1326d26cbfff9e62c61fb15ebadfe`
 - Release type: Local-first UI/UX modernization cut
 
 ## Gate Evidence
@@ -26,8 +27,8 @@ All commands passed with exit code `0`:
   - `docs/mvp-qa-e2e-report.json`
   - `docs/mvp-qa-report.md`
 - Review artifacts:
-  - `/Users/tarique/Downloads/banking-diagram-mvp_v0.2.0_handoff_<timestamp>.tar.gz`
-  - `/Users/tarique/Downloads/banking-diagram-mvp_v0.2.0_handoff_<timestamp>.zip`
+  - `/Users/tarique/Downloads/banking-diagram-mvp_v0.2.0_handoff_20260212-232744.tar.gz`
+  - `/Users/tarique/Downloads/banking-diagram-mvp_v0.2.0_handoff_20260212-232744.zip`
 
 ## Notes
 - This release modernizes visual language and interaction hierarchy only.

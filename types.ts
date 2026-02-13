@@ -172,6 +172,9 @@ export interface DrawingPath {
 
 export type ToolMode = 'select' | 'draw' | 'text';
 export type GridMode = 'none' | 'lines' | 'dots';
+export type OverlayMode = 'none' | 'risk' | 'ledger' | 'both';
+export type LaneGroupingMode = 'manual' | 'entity' | 'regulatory' | 'geography' | 'ledger';
+export type ExportFormat = 'json' | 'png' | 'pdf';
 
 export interface DiagramSnapshot {
   nodes: Node[];

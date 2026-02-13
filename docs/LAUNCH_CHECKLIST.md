@@ -8,13 +8,13 @@
 - [x] Mobile toolbar/actions suites passing
 
 ## Release Tag
-- [ ] Create annotated tag `v0.2.0`
-- [ ] Push `main` and tags to local origin
-- [ ] Verify `v0.2.0` exists on origin
+- [x] Create annotated tag `v0.2.0`
+- [x] Push `main` and tags to local origin
+- [x] Verify `v0.2.0` exists on origin
 
 ## Local Deliverable Freeze
-- [ ] Generate `/Users/tarique/Downloads/banking-diagram-mvp_v0.2.0_handoff_<timestamp>.tar.gz`
-- [ ] Generate `/Users/tarique/Downloads/banking-diagram-mvp_v0.2.0_handoff_<timestamp>.zip`
+- [x] Generate `/Users/tarique/Downloads/banking-diagram-mvp_v0.2.0_handoff_20260212-232744.tar.gz`
+- [x] Generate `/Users/tarique/Downloads/banking-diagram-mvp_v0.2.0_handoff_20260212-232744.zip`
 
 ## Optional Public Promotion (post local signoff)
 - [ ] Deploy rebased `main` to hosted target

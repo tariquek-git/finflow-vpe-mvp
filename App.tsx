@@ -1,48 +1,33 @@
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
-  Trash2,
-  Download,
-  Upload,
-  RotateCcw,
-  RotateCw,
-  RefreshCw,
-  LifeBuoy,
-  AlertTriangle,
-  Sun,
-  Moon,
   Sparkles,
   ChevronLeft,
-  ChevronRight,
-  MousePointer2,
-  Pencil,
-  Type as TypeIcon,
-  Minus,
-  Divide,
-  MoreHorizontal,
-  ArrowRight,
-  ArrowRightLeft,
-  CircleDot,
-  Rows3,
-  Plus,
-  X
+  ChevronRight
 } from 'lucide-react';
 import FlowCanvas from './components/FlowCanvas';
 import Sidebar from './components/Sidebar';
-import Inspector from './components/Inspector';
+import Inspector, { type InspectorTab } from './components/Inspector';
+import TopBar from './components/layout/TopBar';
+import BottomStatusBar from './components/layout/BottomStatusBar';
+import FloatingContextBar from './components/layout/FloatingContextBar';
+import ShortcutsModal from './components/help/ShortcutsModal';
 import {
   Node,
+  AccountType,
   Edge,
   EntityType,
   PaymentRail,
   DrawingPath,
   FlowDirection,
   NodeShape,
+  Position,
   ViewportTransform,
   DiagramSnapshot,
   LayoutSettings,
   ExportPayloadV2,
-  GridMode
+  GridMode,
+  LaneGroupingMode
 } from './types';
 import { useUIStore } from './stores/uiStore';
 import {
@@ -54,6 +39,7 @@ import {
   persistDiagramToStorage,
   persistLayoutToStorage
 } from './lib/diagramIO';
+import { downloadPdfExport, downloadPngExport } from './lib/exportAssets';
 
 const STORAGE_KEY = 'finflow-builder.diagram.v1';
 const LAYOUT_STORAGE_KEY = 'finflow-builder.layout.v1';
@@ -226,6 +212,105 @@ const hasDirectConnection = (allEdges: Edge[], nodeAId: string, nodeBId: string)
       (edge.sourceId === nodeBId && edge.targetId === nodeAId)
   );
 
+const getLaneLabelsForMode = (mode: LaneGroupingMode): string[] => {
+  if (mode === 'entity') {
+    return ['Banks', 'Processors & Networks', 'Controls & Treasury', 'Endpoints'];
+  }
+  if (mode === 'regulatory') {
+    return ['Regulated Institutions', 'Payment Operations', 'Compliance Controls', 'Counterparties'];
+  }
+  if (mode === 'geography') {
+    return ['North America', 'EMEA', 'APAC', 'LATAM / Other'];
+  }
+  if (mode === 'ledger') {
+    return ['Customer Accounts', 'Omnibus / FBO', 'Settlement / Reserve', 'Treasury & Control'];
+  }
+  return [];
+};
+
+const getLaneIdForNode = (node: Node, mode: LaneGroupingMode): number | undefined => {
+  if (mode === 'manual') return node.swimlaneId;
+
+  if (mode === 'entity') {
+    if (
+      node.type === EntityType.SPONSOR_BANK ||
+      node.type === EntityType.ISSUING_BANK ||
+      node.type === EntityType.ACQUIRING_BANK ||
+      node.type === EntityType.CENTRAL_BANK ||
+      node.type === EntityType.CREDIT_UNION ||
+      node.type === EntityType.CORRESPONDENT_BANK
+    ) {
+      return 1;
+    }
+    if (
+      node.type === EntityType.PROCESSOR ||
+      node.type === EntityType.NETWORK ||
+      node.type === EntityType.GATEWAY ||
+      node.type === EntityType.SWITCH ||
+      node.type === EntityType.WALLET_PROVIDER ||
+      node.type === EntityType.PROGRAM_MANAGER
+    ) {
+      return 2;
+    }
+    if (node.type === EntityType.GATE || node.type === EntityType.LIQUIDITY_PROVIDER) {
+      return 3;
+    }
+    return 4;
+  }
+
+  if (mode === 'regulatory') {
+    if (
+      node.type === EntityType.SPONSOR_BANK ||
+      node.type === EntityType.ISSUING_BANK ||
+      node.type === EntityType.ACQUIRING_BANK ||
+      node.type === EntityType.CENTRAL_BANK ||
+      node.type === EntityType.CREDIT_UNION ||
+      node.type === EntityType.CORRESPONDENT_BANK
+    ) {
+      return 1;
+    }
+    if (
+      node.type === EntityType.PROCESSOR ||
+      node.type === EntityType.GATEWAY ||
+      node.type === EntityType.SWITCH ||
+      node.type === EntityType.NETWORK
+    ) {
+      return 2;
+    }
+    if (node.type === EntityType.GATE || node.type === EntityType.LIQUIDITY_PROVIDER) {
+      return 3;
+    }
+    return 4;
+  }
+
+  if (mode === 'geography') {
+    return 1;
+  }
+
+  if (mode === 'ledger') {
+    if (node.accountType === undefined || node.accountType === null) {
+      if (node.type === EntityType.END_POINT) return 1;
+      if (node.type === EntityType.LIQUIDITY_PROVIDER) return 4;
+      return 1;
+    }
+    if (node.accountType === AccountType.FBO || node.accountType === AccountType.TREASURY) {
+      return 2;
+    }
+    if (
+      node.accountType === AccountType.SETTLEMENT ||
+      node.accountType === AccountType.RESERVE
+    ) {
+      return 3;
+    }
+    if (node.type === EntityType.LIQUIDITY_PROVIDER || node.type === EntityType.GATE) {
+      return 4;
+    }
+    return 1;
+  }
+
+  return node.swimlaneId;
+};
+
 type EditMergeState = { id: string | null; at: number };
 type ToastTone = 'info' | 'success' | 'warning' | 'error';
 type ToastMessage = {
@@ -298,26 +383,6 @@ const isEditableTarget = (target: EventTarget | null): target is HTMLElement => 
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
 };
 
-const DraggableConnectorButton: React.FC<{
-  onClick: () => void;
-  onNativeDragStart: (event: React.DragEvent<HTMLButtonElement>) => void;
-}> = ({ onClick, onNativeDragStart }) => {
-  return (
-    <button
-      data-testid="toolbar-insert-connector"
-      draggable
-      onDragStart={onNativeDragStart}
-      onClick={onClick}
-      aria-label="Insert connector"
-      className="flex h-8 cursor-grab items-center gap-1 rounded-md border border-transparent px-2.5 text-xs font-medium text-slate-600 transition-all hover:border-slate-300 hover:bg-white active:cursor-grabbing dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-700"
-      title="Click to insert connector at center, or drag into canvas"
-    >
-      <ArrowRight className="h-4 w-4" />
-      <span className="hidden sm:inline">Connector</span>
-    </button>
-  );
-};
-
 const App: React.FC = () => {
   const isAIEnabled = import.meta.env.VITE_ENABLE_AI === 'true';
   const feedbackHref = (import.meta.env.VITE_FEEDBACK_URL as string) || 'mailto:feedback@finflow.app';
@@ -349,9 +414,10 @@ const App: React.FC = () => {
   const updateSwimlaneLabel = useUIStore((state) => state.updateSwimlaneLabel);
   const gridMode = useUIStore((state) => state.gridMode);
   const setGridMode = useUIStore((state) => state.setGridMode);
-  const isLayoutPanelOpen = useUIStore((state) => state.isLayoutPanelOpen);
-  const setIsLayoutPanelOpen = useUIStore((state) => state.setIsLayoutPanelOpen);
-  const toggleLayoutPanel = useUIStore((state) => state.toggleLayoutPanel);
+  const overlayMode = useUIStore((state) => state.overlayMode);
+  const setOverlayMode = useUIStore((state) => state.setOverlayMode);
+  const laneGroupingMode = useUIStore((state) => state.laneGroupingMode);
+  const setLaneGroupingMode = useUIStore((state) => state.setLaneGroupingMode);
   const activeTool = useUIStore((state) => state.activeTool);
   const setActiveTool = useUIStore((state) => state.setActiveTool);
   const [aiPrompt, setAiPrompt] = useState('');
@@ -360,7 +426,11 @@ const App: React.FC = () => {
     if (typeof window === 'undefined') return false;
     return window.localStorage.getItem(ONBOARDING_DISMISSED_STORAGE_KEY) !== 'true';
   });
+  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+  const [inspectorTabRequest, setInspectorTabRequest] = useState<InspectorTab | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [pointerWorld, setPointerWorld] = useState<Position | null>(null);
+  const [showMinimap, setShowMinimap] = useState(false);
   const [viewport, setViewport] = useState<ViewportTransform>({ x: 0, y: 0, zoom: 1 });
   const [storageWarning, setStorageWarning] = useState<string | null>(null);
   const [hasRecoverySnapshot, setHasRecoverySnapshot] = useState(false);
@@ -374,6 +444,7 @@ const App: React.FC = () => {
   const [future, setFuture] = useState<DiagramSnapshot[]>([]);
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const exportLayerRef = useRef<HTMLDivElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
   const lastNodeEditRef = useRef<EditMergeState>({ id: null, at: 0 });
   const lastEdgeEditRef = useRef<EditMergeState>({ id: null, at: 0 });
@@ -401,8 +472,9 @@ const App: React.FC = () => {
     }
   }, []);
 
-  const openQuickStart = useCallback(() => {
+  const openHelp = useCallback(() => {
     setIsQuickStartVisible(true);
+    setIsShortcutsOpen(true);
   }, []);
 
   useEffect(() => {
@@ -574,6 +646,7 @@ const App: React.FC = () => {
   }, [pushHistory]);
 
   const handleSelectEdge = useCallback((id: string | null) => {
+    setInspectorTabRequest(null);
     setSelectedEdgeId(id);
     if (!id) {
       return;
@@ -595,6 +668,7 @@ const App: React.FC = () => {
   }, [edges, isMobileViewport]);
 
   const handleSelectNodes = useCallback((ids: string[]) => {
+    setInspectorTabRequest(null);
     setSelectedNodeIds(ids);
     setSelectedEdgeId(null);
     if (ids.length === 1) {
@@ -1062,6 +1136,38 @@ const App: React.FC = () => {
     toggleShowSwimlanes();
   }, [toggleShowSwimlanes]);
 
+  const handleToggleRiskOverlay = useCallback(() => {
+    if (overlayMode === 'none') {
+      setOverlayMode('risk');
+      return;
+    }
+    if (overlayMode === 'risk') {
+      setOverlayMode('none');
+      return;
+    }
+    if (overlayMode === 'ledger') {
+      setOverlayMode('both');
+      return;
+    }
+    setOverlayMode('ledger');
+  }, [overlayMode, setOverlayMode]);
+
+  const handleToggleLedgerOverlay = useCallback(() => {
+    if (overlayMode === 'none') {
+      setOverlayMode('ledger');
+      return;
+    }
+    if (overlayMode === 'ledger') {
+      setOverlayMode('none');
+      return;
+    }
+    if (overlayMode === 'risk') {
+      setOverlayMode('both');
+      return;
+    }
+    setOverlayMode('risk');
+  }, [overlayMode, setOverlayMode]);
+
   const handleAddSwimlane = useCallback(() => {
     addSwimlane();
   }, [addSwimlane]);
@@ -1073,6 +1179,22 @@ const App: React.FC = () => {
   const handleUpdateSwimlaneLabel = useCallback((indexToUpdate: number, label: string) => {
     updateSwimlaneLabel(indexToUpdate, label);
   }, [updateSwimlaneLabel]);
+
+  useEffect(() => {
+    if (laneGroupingMode === 'manual') return;
+    const labels = getLaneLabelsForMode(laneGroupingMode);
+    if (labels.length >= 2) {
+      setSwimlaneLabels(labels);
+    }
+    setShowSwimlanes(true);
+    setNodes((prev) =>
+      prev.map((node) => {
+        const laneId = getLaneIdForNode(node, laneGroupingMode);
+        if (!laneId || node.swimlaneId === laneId) return node;
+        return { ...node, swimlaneId: laneId };
+      })
+    );
+  }, [laneGroupingMode, setShowSwimlanes, setSwimlaneLabels]);
 
   const handleResetCanvas = useCallback(() => {
     const shouldReset = window.confirm(
@@ -1161,7 +1283,209 @@ const App: React.FC = () => {
     pushToast('Diagram exported successfully.', 'success');
   }, [getCurrentLayout, getCurrentSnapshot, pushToast]);
 
+  const handleExportPng = useCallback(async () => {
+    if (!exportLayerRef.current) {
+      pushToast('PNG export failed: canvas layer is not ready.', 'error');
+      return;
+    }
+
+    try {
+      await downloadPngExport({
+        worldElement: exportLayerRef.current,
+        nodes,
+        isDarkMode
+      });
+      pushToast('PNG exported successfully.', 'success');
+    } catch (error) {
+      console.error('PNG export failed:', error);
+      pushToast('PNG export failed. Try again.', 'error');
+    }
+  }, [isDarkMode, nodes, pushToast]);
+
+  const handleExportPdf = useCallback(async () => {
+    if (!exportLayerRef.current) {
+      pushToast('PDF export failed: canvas layer is not ready.', 'error');
+      return;
+    }
+
+    try {
+      await downloadPdfExport({
+        worldElement: exportLayerRef.current,
+        nodes,
+        isDarkMode
+      });
+      pushToast('PDF exported successfully.', 'success');
+    } catch (error) {
+      console.error('PDF export failed:', error);
+      pushToast('PDF export failed. Try again.', 'error');
+    }
+  }, [isDarkMode, nodes, pushToast]);
+
   const hasSelectedEdge = !!selectedEdgeId && edges.some((edge) => edge.id === selectedEdgeId);
+
+  const handleSetSelectedEdgeStyle = useCallback(
+    (style: 'solid' | 'dashed' | 'dotted') => {
+      setActiveEdgeStyle(style);
+      if (!selectedEdgeId) return;
+      const edge = edges.find((candidate) => candidate.id === selectedEdgeId);
+      if (!edge) return;
+      handleUpdateEdge({ ...edge, style });
+    },
+    [edges, handleUpdateEdge, selectedEdgeId]
+  );
+
+  const handleToggleSelectedArrowHead = useCallback(() => {
+    if (!selectedEdgeId) return;
+    const nextConfig = { ...activeArrowConfig, showArrowHead: !activeArrowConfig.showArrowHead };
+    setActiveArrowConfig(nextConfig);
+    const edge = edges.find((candidate) => candidate.id === selectedEdgeId);
+    if (!edge) return;
+    handleUpdateEdge({ ...edge, ...nextConfig });
+  }, [activeArrowConfig, edges, handleUpdateEdge, selectedEdgeId]);
+
+  const handleToggleSelectedMidArrow = useCallback(() => {
+    if (!selectedEdgeId) return;
+    const nextConfig = { ...activeArrowConfig, showMidArrow: !activeArrowConfig.showMidArrow };
+    setActiveArrowConfig(nextConfig);
+    const edge = edges.find((candidate) => candidate.id === selectedEdgeId);
+    if (!edge) return;
+    handleUpdateEdge({ ...edge, ...nextConfig });
+  }, [activeArrowConfig, edges, handleUpdateEdge, selectedEdgeId]);
+
+  const handleZoomIn = useCallback(() => {
+    setViewport((prev) => ({ ...prev, zoom: Math.min(2.5, prev.zoom * 1.12) }));
+  }, []);
+
+  const handleZoomOut = useCallback(() => {
+    setViewport((prev) => ({ ...prev, zoom: Math.max(0.3, prev.zoom * 0.9) }));
+  }, []);
+
+  const handleResetView = useCallback(() => {
+    setViewport({ x: 0, y: 0, zoom: 1 });
+  }, []);
+
+  const handleFitView = useCallback(() => {
+    if (!containerRef.current || nodes.length === 0) {
+      setViewport({ x: 0, y: 0, zoom: 1 });
+      return;
+    }
+
+    const padding = 120;
+    let minX = Number.POSITIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+
+    nodes.forEach((node) => {
+      const { width, height } = getNodeDimensions(node);
+      minX = Math.min(minX, node.position.x);
+      minY = Math.min(minY, node.position.y);
+      maxX = Math.max(maxX, node.position.x + width);
+      maxY = Math.max(maxY, node.position.y + height);
+    });
+
+    if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
+      setViewport({ x: 0, y: 0, zoom: 1 });
+      return;
+    }
+
+    minX -= padding;
+    minY -= padding;
+    maxX += padding;
+    maxY += padding;
+
+    const boundsWidth = Math.max(1, maxX - minX);
+    const boundsHeight = Math.max(1, maxY - minY);
+    const rect = containerRef.current.getBoundingClientRect();
+    const viewportWidth = Math.max(1, rect.width);
+    const viewportHeight = Math.max(1, rect.height);
+    const zoom = Math.min(2.2, Math.max(0.3, Math.min(viewportWidth / boundsWidth, viewportHeight / boundsHeight)));
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+
+    setViewport({
+      zoom,
+      x: viewportWidth / 2 - centerX * zoom,
+      y: viewportHeight / 2 - centerY * zoom
+    });
+  }, [nodes]);
+
+  const handleCycleGridMode = useCallback(() => {
+    if (gridMode === 'none') {
+      setGridMode('lines');
+      return;
+    }
+    if (gridMode === 'lines') {
+      setGridMode('dots');
+      return;
+    }
+    setGridMode('none');
+  }, [gridMode, setGridMode]);
+
+  const handleOpenCanvasControls = useCallback(() => {
+    setInspectorTabRequest('canvas');
+    setIsInspectorOpen(true);
+    if (isMobileViewport) {
+      setIsSidebarOpen(false);
+    }
+  }, [isMobileViewport]);
+
+  const floatingContextAnchor = useCallback((): { x: number; y: number } | null => {
+    const clampAnchor = (x: number, y: number) => {
+      if (!containerRef.current) return { x, y };
+      const rect = containerRef.current.getBoundingClientRect();
+      const horizontalPadding = 120;
+      const verticalPadding = 18;
+      return {
+        x: Math.min(rect.width - horizontalPadding, Math.max(horizontalPadding, x)),
+        y: Math.min(rect.height - verticalPadding, Math.max(verticalPadding, y))
+      };
+    };
+
+    if (selectedNodeIds.length > 0) {
+      const selected = nodes.filter((node) => selectedNodeIds.includes(node.id));
+      if (selected.length === 0) return null;
+
+      const bounds = selected.reduce(
+        (acc, node) => {
+          const { width, height } = getNodeDimensions(node);
+          return {
+            minX: Math.min(acc.minX, node.position.x),
+            minY: Math.min(acc.minY, node.position.y),
+            maxX: Math.max(acc.maxX, node.position.x + width),
+            maxY: Math.max(acc.maxY, node.position.y + height)
+          };
+        },
+        {
+          minX: Number.POSITIVE_INFINITY,
+          minY: Number.POSITIVE_INFINITY,
+          maxX: Number.NEGATIVE_INFINITY,
+          maxY: Number.NEGATIVE_INFINITY
+        }
+      );
+
+      return clampAnchor(
+        ((bounds.minX + bounds.maxX) / 2) * viewport.zoom + viewport.x,
+        bounds.minY * viewport.zoom + viewport.y - 10
+      );
+    }
+
+    if (selectedEdgeId) {
+      const edge = edges.find((candidate) => candidate.id === selectedEdgeId);
+      if (!edge) return null;
+      const source = nodes.find((node) => node.id === edge.sourceId);
+      const target = nodes.find((node) => node.id === edge.targetId);
+      if (!source || !target) return null;
+      const sourceCenter = getNodeCenter(source);
+      const targetCenter = getNodeCenter(target);
+      return clampAnchor(
+        ((sourceCenter.x + targetCenter.x) / 2) * viewport.zoom + viewport.x,
+        ((sourceCenter.y + targetCenter.y) / 2) * viewport.zoom + viewport.y - 22
+      );
+    }
+
+    return null;
+  }, [edges, nodes, selectedEdgeId, selectedNodeIds, viewport.x, viewport.y, viewport.zoom]);
 
   const screenToWorld = useCallback(
     (clientX: number, clientY: number) => {
@@ -1331,6 +1655,12 @@ const App: React.FC = () => {
       const key = event.key.toLowerCase();
       const isMetaOrCtrl = event.metaKey || event.ctrlKey;
 
+      if (event.key === '?' || (event.key === '/' && event.shiftKey)) {
+        event.preventDefault();
+        openHelp();
+        return;
+      }
+
       if (isMetaOrCtrl && key === 'z' && !event.shiftKey) {
         event.preventDefault();
         handleUndo();
@@ -1375,7 +1705,7 @@ const App: React.FC = () => {
 
     window.addEventListener('keydown', handleShortcut);
     return () => window.removeEventListener('keydown', handleShortcut);
-  }, [handleDelete, handleDuplicateSelection, handleRedo, handleUndo, moveSelectedNodesBy, selectedEdgeId, selectedNodeIds]);
+  }, [handleDelete, handleDuplicateSelection, handleRedo, handleUndo, moveSelectedNodesBy, openHelp, selectedEdgeId, selectedNodeIds]);
 
   const canGenerateFlow = isAIEnabled && aiPrompt.trim().length > 0 && !isAILoading;
   const prefetchAIModule = useCallback(() => {
@@ -1391,907 +1721,349 @@ const App: React.FC = () => {
         : 'Backup: Not yet created';
 
   return (
-      <div className={`finflow-app-shell flex h-screen flex-col overflow-hidden ${isDarkMode ? 'dark text-slate-100' : 'text-slate-900'}`}>
-        <header
-          className={`ui-panel glass-panel z-40 mx-2 mt-2 flex shrink-0 flex-col gap-3 px-3 py-2 md:mx-3 md:flex-row md:items-center md:justify-between ${
-            isDarkMode
-              ? 'bg-slate-900/90'
-              : 'bg-white/92'
-          }`}
-        >
-          <div className="flex items-center gap-2 md:gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-blue-600 to-cyan-500 text-lg font-bold text-white shadow-sm">
-              F
-            </div>
-            <div>
-              <h1 className="text-sm font-bold tracking-tight">FinFlow Builder</h1>
-              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-blue-600 dark:text-blue-300">
-                Architect Tool
-              </p>
-            </div>
-            <span
-              className={`mono hidden rounded-full px-2 py-0.5 text-[10px] font-medium lg:inline-flex ${
-                isDarkMode ? 'bg-slate-700 text-slate-200' : 'bg-slate-100 text-slate-600'
-              }`}
-            >
-              {nodes.length} nodes | {edges.length} links
-            </span>
-            <span
-              data-testid="backup-status-indicator"
-              data-last-saved-at={recoveryLastSavedAt || ''}
-              className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                hasRecoverySnapshot
-                  ? isDarkMode
-                    ? 'bg-emerald-500/20 text-emerald-200'
-                    : 'bg-emerald-100 text-emerald-700'
-                  : isDarkMode
-                    ? 'bg-amber-500/20 text-amber-200'
-                    : 'bg-amber-100 text-amber-700'
-              }`}
-              title={
-                hasRecoverySnapshot && recoveryLastSavedAt
-                  ? `Last backup: ${new Date(recoveryLastSavedAt).toLocaleString()}`
-                  : 'No backup created yet'
-              }
-            >
-              {backupStatusText}
-            </span>
-            <a
-              href={feedbackHref}
-              target="_blank"
-              rel="noreferrer"
-              className={`rounded-full px-2 py-0.5 text-[10px] font-semibold transition ${
-                isDarkMode
-                  ? 'bg-blue-500/20 text-blue-200 hover:bg-blue-500/30'
-                  : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
-              }`}
-            >
-              Feedback
-            </a>
-            {storageWarning && (
-              <span
-                role="status"
-                className={`hidden items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium lg:inline-flex ${
-                  isDarkMode ? 'bg-amber-500/15 text-amber-200' : 'bg-amber-100 text-amber-700'
+    <div className={`finflow-app-shell flex h-screen flex-col overflow-hidden ${isDarkMode ? 'dark text-slate-100' : 'text-slate-900'}`}>
+      <TopBar
+        isDarkMode={isDarkMode}
+        nodesCount={nodes.length}
+        edgesCount={edges.length}
+        backupStatusText={backupStatusText}
+        hasRecoverySnapshot={hasRecoverySnapshot}
+        recoveryLastSavedAt={recoveryLastSavedAt}
+        feedbackHref={feedbackHref}
+        storageWarning={storageWarning}
+        isSidebarOpen={isSidebarOpen}
+        isInspectorOpen={isInspectorOpen}
+        showSwimlanes={showSwimlanes}
+        snapToGrid={snapToGrid}
+        gridMode={gridMode}
+        onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)}
+        onToggleInspector={() => setIsInspectorOpen((prev) => !prev)}
+        onToggleTheme={() => setIsDarkMode((prev) => !prev)}
+        onOpenHelp={openHelp}
+        onUndo={handleUndo}
+        onRedo={handleRedo}
+        canUndo={past.length > 0}
+        canRedo={future.length > 0}
+        onRestoreRecovery={handleRestoreRecovery}
+        onResetCanvas={handleResetCanvas}
+        onImportDiagram={() => importInputRef.current?.click()}
+        onExportDiagram={handleExportDiagram}
+        onExportPng={handleExportPng}
+        onExportPdf={handleExportPdf}
+        onToggleSwimlanes={handleToggleSwimlanes}
+        onToggleSnapToGrid={() => setSnapToGrid((prev) => !prev)}
+        onCycleGridMode={handleCycleGridMode}
+        centerSlot={
+          isAIEnabled ? (
+            <div className={`group relative ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>
+              <Sparkles
+                className={`absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-blue-500 ${
+                  isAILoading ? 'animate-pulse' : 'opacity-70'
                 }`}
-                title={storageWarning}
-              >
-                <AlertTriangle className="h-3 w-3" />
-                Autosave issue
-              </span>
-            )}
-          </div>
-
-          <div className="flex-1 md:max-w-xl md:px-6">
-            {isAIEnabled ? (
-              <div
-                className={`group relative ${
-                  isDarkMode ? 'text-slate-200' : 'text-slate-700'
+              />
+              <input
+                type="text"
+                placeholder={isAILoading ? 'Drafting flow...' : 'Describe a flow to generate...'}
+                className={`ui-input h-10 w-full rounded-full pl-10 pr-28 text-sm outline-none transition-all focus:ring-2 focus:ring-blue-500/20 ${
+                  isDarkMode ? 'bg-slate-900' : 'bg-white'
                 }`}
-              >
-                <Sparkles
-                  className={`absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-blue-500 ${
-                    isAILoading ? 'animate-pulse' : 'opacity-70'
-                  }`}
-                />
-                <input
-                  type="text"
-                  placeholder={isAILoading ? 'Drafting flow...' : 'Describe a flow to generate...'}
-                  className={`ui-input h-10 w-full rounded-full pl-10 pr-28 text-sm outline-none transition-all focus:ring-2 focus:ring-blue-500/20 ${
-                    isDarkMode
-                      ? 'bg-slate-900'
-                      : 'bg-white'
-                  }`}
-                  value={aiPrompt}
-                  onChange={(e) => setAiPrompt(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && canGenerateFlow && handleGenerateFlow()}
-                  onFocus={prefetchAIModule}
-                />
-                <button
-                  onClick={handleGenerateFlow}
-                  disabled={!canGenerateFlow}
-                  onMouseEnter={prefetchAIModule}
-                  className="absolute right-1.5 top-1.5 h-7 rounded-full bg-gradient-to-b from-blue-600 to-blue-700 px-4 text-[11px] font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-45"
-                >
-                  {isAILoading ? 'Generating...' : 'Generate'}
-                </button>
-              </div>
-            ) : (
-              <div
-                data-testid="ai-disabled-badge"
-                className={`rounded-full border px-3 py-2 text-xs font-semibold ${
-                  isDarkMode
-                    ? 'border-slate-700 bg-slate-900 text-slate-300'
-                    : 'border-slate-300 bg-white text-slate-600'
-                }`}
-              >
-                AI Generate is disabled for public MVP.
-              </div>
-            )}
-          </div>
-
-          <div className="flex w-full flex-col gap-2 md:w-auto md:flex-row md:items-center">
-            <div className="flex w-full items-center gap-1.5 overflow-x-auto pb-1 md:w-auto md:overflow-visible md:pb-0">
-            <button
-              onClick={() => setIsSidebarOpen((prev) => !prev)}
-              aria-pressed={isSidebarOpen}
-              className={`tap-target shrink-0 flex items-center gap-1 rounded-md border px-2.5 py-2 text-[11px] font-semibold transition lg:hidden ${
-                isDarkMode
-                  ? 'border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-700'
-                  : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
-              }`}
-            >
-              {isSidebarOpen ? 'Hide Library' : 'Library'}
-            </button>
-            <button
-              onClick={() => setIsInspectorOpen((prev) => !prev)}
-              aria-pressed={isInspectorOpen}
-              className={`tap-target shrink-0 flex items-center gap-1 rounded-md border px-2.5 py-2 text-[11px] font-semibold transition lg:hidden ${
-                isDarkMode
-                  ? 'border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-700'
-                  : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
-              }`}
-            >
-              {isInspectorOpen ? 'Hide Inspect' : 'Inspect'}
-            </button>
-
-            <div className="shrink-0 space-y-1">
-              <div className="ui-section-title px-1">History</div>
-              <div
-              className={`shrink-0 flex items-center rounded-md border p-1 ${
-                isDarkMode
-                  ? 'border-slate-700 bg-slate-900'
-                  : 'border-slate-300 bg-white'
-              }`}
-            >
+                value={aiPrompt}
+                onChange={(e) => setAiPrompt(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && canGenerateFlow && handleGenerateFlow()}
+                onFocus={prefetchAIModule}
+              />
               <button
-                title="Undo"
-                aria-label="Undo"
-                onClick={handleUndo}
-                disabled={past.length === 0}
-                className="tap-target rounded-md p-2 text-slate-500 transition hover:bg-slate-100 disabled:opacity-30 dark:text-slate-300 dark:hover:bg-slate-700"
+                onClick={handleGenerateFlow}
+                disabled={!canGenerateFlow}
+                onMouseEnter={prefetchAIModule}
+                className="absolute right-1.5 top-1.5 h-7 rounded-full bg-gradient-to-b from-blue-600 to-blue-700 px-4 text-[11px] font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-45"
               >
-                <RotateCcw className="h-4 w-4" />
-              </button>
-              <button
-                title="Redo"
-                aria-label="Redo"
-                onClick={handleRedo}
-                disabled={future.length === 0}
-                className="tap-target rounded-md p-2 text-slate-500 transition hover:bg-slate-100 disabled:opacity-30 dark:text-slate-300 dark:hover:bg-slate-700"
-              >
-                <RotateCw className="h-4 w-4" />
+                {isAILoading ? 'Generating...' : 'Generate'}
               </button>
             </div>
-            </div>
-
-            <button
-              onClick={() => setIsDarkMode(!isDarkMode)}
-              aria-pressed={isDarkMode}
-              aria-label={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
-              className={`tap-target shrink-0 rounded-md border p-2 transition ${
-                isDarkMode
-                  ? 'border-slate-700 bg-slate-900 text-yellow-300 hover:bg-slate-700'
-                  : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              {isDarkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            </button>
-            <button
-              data-testid="toolbar-help-open"
-              onClick={openQuickStart}
-              aria-label="Open quick start help"
-              className={`tap-target shrink-0 rounded-md border px-2.5 py-2 text-[11px] font-semibold transition ${
-                isDarkMode
-                  ? 'border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-700'
-                  : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
-              }`}
-            >
-              Help
-            </button>
-            </div>
-
+          ) : (
             <div
-              data-testid="primary-actions-strip"
-              className={`primary-actions-strip rounded-md border px-2 py-1 ${
-                isDarkMode ? 'border-slate-700 bg-slate-900' : 'border-slate-300 bg-white'
+              data-testid="ai-disabled-badge"
+              className={`rounded-full border px-3 py-2 text-xs font-semibold ${
+                isDarkMode ? 'border-slate-700 bg-slate-900 text-slate-300' : 'border-slate-300 bg-white text-slate-600'
               }`}
             >
-              <div className="mb-1 px-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
-                Primary Actions
-              </div>
-              <div className="primary-actions-grid">
-                <button
-                  onClick={handleRestoreRecovery}
-                  data-testid="toolbar-restore"
-                  title={
-                    hasRecoverySnapshot
-                      ? 'Restore the backup captured before reset/import'
-                      : 'No backup yet. Click to see recovery guidance.'
-                  }
-                  className={`tap-target shrink-0 flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold transition ${
-                    isDarkMode
-                      ? hasRecoverySnapshot
-                        ? 'border-slate-700 bg-slate-800 text-slate-100 hover:bg-slate-700'
-                        : 'border-amber-500/40 bg-amber-500/10 text-amber-100 hover:bg-amber-500/20'
-                      : hasRecoverySnapshot
-                        ? 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
-                        : 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100'
-                  }`}
-                >
-                  <LifeBuoy className="h-4 w-4" />
-                  <span>Restore Backup</span>
-                </button>
-
-                <button
-                  onClick={handleResetCanvas}
-                  data-testid="toolbar-reset-canvas"
-                  title="Reset to starter template (saves backup first)"
-                  className={`tap-target shrink-0 flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold transition ${
-                    isDarkMode
-                      ? 'border-slate-700 bg-slate-800 text-slate-100 hover:bg-slate-700'
-                      : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
-                  }`}
-                >
-                  <RefreshCw className="h-4 w-4" />
-                  <span>Reset</span>
-                </button>
-
-                <button
-                  data-testid="toolbar-import-json"
-                  onClick={() => importInputRef.current?.click()}
-                  title="Import FinFlow JSON (current work is backed up first)"
-                  className={`tap-target shrink-0 flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold transition ${
-                    isDarkMode
-                      ? 'border-slate-700 bg-slate-800 text-slate-100 hover:bg-slate-700'
-                      : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
-                  }`}
-                >
-                  <Upload className="h-4 w-4" />
-                  <span>Import JSON</span>
-                </button>
-                <button
-                  data-testid="toolbar-export-json"
-                  onClick={handleExportDiagram}
-                  title="Export current canvas as FinFlow JSON"
-                  className="tap-target shrink-0 flex items-center gap-2 rounded-md bg-gradient-to-b from-blue-600 to-blue-700 px-3 py-2 text-xs font-semibold text-white transition hover:brightness-110 dark:from-blue-500 dark:to-blue-600 dark:text-white"
-                >
-                  <Download className="h-4 w-4" />
-                  <span>Export JSON</span>
-                </button>
-              </div>
+              AI Generate is disabled for public MVP.
             </div>
-            <input
-              ref={importInputRef}
-              type="file"
-              accept="application/json,.json"
-              className="hidden"
-              onChange={handleImportDiagram}
-            />
-          </div>
-        </header>
+          )
+        }
+      />
 
-        <div
-          data-testid="toast-container"
-          className="pointer-events-none fixed right-3 top-[5.25rem] z-[120] flex w-[min(92vw,28rem)] flex-col gap-2"
-        >
-          {toasts.map((toast) => (
-            <div
-              key={toast.id}
-              data-testid="toast-message"
-              role={toast.tone === 'error' ? 'alert' : 'status'}
-              className={`pointer-events-auto rounded-lg border px-3 py-2 text-sm shadow-lg ${
-                toast.tone === 'success'
-                  ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
-                : toast.tone === 'warning'
-                    ? 'border-amber-300 bg-amber-50 text-amber-800'
-                    : toast.tone === 'error'
-                      ? 'border-rose-300 bg-rose-50 text-rose-800'
-                      : 'border-slate-300 bg-white text-slate-700'
-              }`}
-            >
-              {toast.text}
-            </div>
-          ))}
-        </div>
+      <input
+        ref={importInputRef}
+        type="file"
+        accept="application/json,.json"
+        className="hidden"
+        onChange={handleImportDiagram}
+      />
 
-        <main className="relative flex flex-1 overflow-hidden px-2 pb-2 pt-2 md:px-3">
-          {isMobileViewport && (isSidebarOpen || isInspectorOpen) && (
-            <button
-              type="button"
-              aria-label="Close side panels"
-              onClick={() => {
-                setIsSidebarOpen(false);
-                setIsInspectorOpen(false);
-              }}
-              className="absolute inset-0 z-20 bg-slate-900/20 backdrop-blur-[1px]"
-            />
-          )}
+      <ShortcutsModal isOpen={isShortcutsOpen} onClose={() => setIsShortcutsOpen(false)} isDarkMode={isDarkMode} />
+
+      <div
+        data-testid="toast-container"
+        className="pointer-events-none fixed right-3 top-[5.25rem] z-[120] flex w-[min(92vw,28rem)] flex-col gap-2"
+      >
+        {toasts.map((toast) => (
           <div
-            className={`flex flex-col overflow-hidden rounded-lg border transition-all duration-300 ${
-              isMobileViewport
-                ? `absolute inset-y-0 left-0 z-40 w-72 transform ${
-                    isSidebarOpen ? 'translate-x-0 shadow-xl' : '-translate-x-[110%]'
-                  } transition-transform`
-                : `${isSidebarOpen ? 'w-72' : 'w-0'} relative z-30`
-            } ${
-              isDarkMode
-                ? 'border-slate-700 bg-slate-900'
-                : 'border-slate-200 bg-white'
+            key={toast.id}
+            data-testid="toast-message"
+            role={toast.tone === 'error' ? 'alert' : 'status'}
+            className={`pointer-events-auto rounded-lg border px-3 py-2 text-sm shadow-lg ${
+              toast.tone === 'success'
+                ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+                : toast.tone === 'warning'
+                  ? 'border-amber-300 bg-amber-50 text-amber-800'
+                  : toast.tone === 'error'
+                    ? 'border-rose-300 bg-rose-50 text-rose-800'
+                    : 'border-slate-300 bg-white text-slate-700'
             }`}
           >
-            <Sidebar
-              onAddNode={(type) => {
-                handleAddNode(type);
+            {toast.text}
+          </div>
+        ))}
+      </div>
+
+      <main className="relative flex flex-1 overflow-hidden px-2 pb-2 pt-2 md:px-3">
+        {isMobileViewport && (isSidebarOpen || isInspectorOpen) && (
+          <button
+            type="button"
+            aria-label="Close side panels"
+            onClick={() => {
+              setIsSidebarOpen(false);
+              setIsInspectorOpen(false);
+            }}
+            className="absolute inset-0 z-20 bg-slate-900/20 backdrop-blur-[1px]"
+          />
+        )}
+
+        <div
+          className={`flex flex-col overflow-hidden rounded-lg border transition-all duration-300 ${
+            isMobileViewport
+              ? `absolute inset-y-0 left-0 z-40 w-72 transform ${
+                  isSidebarOpen ? 'translate-x-0 shadow-xl' : '-translate-x-[110%]'
+                } transition-transform`
+              : `${isSidebarOpen ? 'w-72' : 'w-0'} relative z-30`
+          } ${isDarkMode ? 'border-slate-700 bg-slate-900' : 'border-slate-200 bg-white'}`}
+        >
+          <Sidebar
+            onAddNode={(type) => {
+              handleAddNode(type);
+              if (isMobileViewport) {
+                setIsSidebarOpen(false);
+              }
+            }}
+            isDarkMode={isDarkMode}
+            showSwimlanes={showSwimlanes}
+            onToggleSwimlanes={handleToggleSwimlanes}
+            overlayMode={overlayMode}
+            onToggleRiskOverlay={handleToggleRiskOverlay}
+            onToggleLedgerOverlay={handleToggleLedgerOverlay}
+            laneGroupingMode={laneGroupingMode}
+            onSetLaneGroupingMode={setLaneGroupingMode}
+          />
+          <button
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            aria-label={isSidebarOpen ? 'Collapse component library' : 'Expand component library'}
+            className={`absolute -right-3 top-1/2 z-50 hidden h-11 w-6 -translate-y-1/2 items-center justify-center rounded-full border shadow-sm transition lg:flex ${
+              isDarkMode ? 'border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800' : 'border-slate-300 bg-white text-slate-500 hover:bg-slate-100'
+            }`}
+          >
+            {isSidebarOpen ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          </button>
+        </div>
+
+        <div
+          className={`relative ${isMobileViewport ? 'mx-0' : 'mx-2'} flex-1 overflow-hidden rounded-xl border ${
+            isDarkMode ? 'border-slate-700 bg-slate-900' : 'border-slate-200 bg-white'
+          }`}
+          data-testid="canvas-dropzone"
+          ref={containerRef}
+          onDrop={handleDrop}
+          onDragOver={(e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'copy';
+          }}
+        >
+          <FlowCanvas
+            nodes={nodes}
+            edges={edges}
+            drawings={drawings}
+            selectedNodeIds={selectedNodeIds}
+            selectedEdgeId={selectedEdgeId}
+            onSelectNodes={handleSelectNodes}
+            onSelectEdge={handleSelectEdge}
+            onUpdateNodePosition={(id, pos) =>
+              setNodes((prev) =>
+                prev.map((n) =>
+                  n.id === id
+                    ? {
+                        ...n,
+                        position: pos,
+                        swimlaneId: Math.floor(Math.max(0, pos.y) / 300) + 1
+                      }
+                    : n
+                )
+              )
+            }
+            onBeginNodeMove={(_ids) => pushHistory()}
+            onConnect={handleConnect}
+            isDarkMode={isDarkMode}
+            showPorts={showPorts}
+            snapToGrid={snapToGrid}
+            activeTool={activeTool}
+            onAddDrawing={handleAddDrawing}
+            onOpenInspector={() => {
+              if (selectedNodeIds.length <= 1) {
+                setIsInspectorOpen(true);
                 if (isMobileViewport) {
                   setIsSidebarOpen(false);
                 }
-              }}
-              isDarkMode={isDarkMode}
-            />
-            <button
-              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              aria-label={isSidebarOpen ? 'Collapse component library' : 'Expand component library'}
-              className={`absolute -right-3 top-1/2 z-50 hidden h-11 w-6 -translate-y-1/2 items-center justify-center rounded-full border shadow-sm transition lg:flex ${
-                isDarkMode
-                  ? 'border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800'
-                  : 'border-slate-300 bg-white text-slate-500 hover:bg-slate-100'
-              }`}
-            >
-              {isSidebarOpen ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-            </button>
-          </div>
-
-          <div
-            className={`relative ${isMobileViewport ? 'mx-0' : 'mx-2'} flex-1 overflow-hidden rounded-xl border ${
-              isDarkMode
-                ? 'border-slate-700 bg-slate-900'
-                : 'border-slate-200 bg-white'
-            }`}
-            data-testid="canvas-dropzone"
-            ref={containerRef}
-            onDrop={handleDrop}
-            onDragOver={(e) => {
-              e.preventDefault();
-              e.dataTransfer.dropEffect = 'copy';
-            }}
-          >
-            <FlowCanvas
-              nodes={nodes}
-              edges={edges}
-              drawings={drawings}
-              selectedNodeIds={selectedNodeIds}
-              selectedEdgeId={selectedEdgeId}
-              onSelectNodes={handleSelectNodes}
-              onSelectEdge={handleSelectEdge}
-              onUpdateNodePosition={(id, pos) =>
-                setNodes((prev) =>
-                  prev.map((n) =>
-                    n.id === id
-                      ? {
-                          ...n,
-                          position: pos,
-                          swimlaneId: Math.floor(Math.max(0, pos.y) / 300) + 1
-                        }
-                      : n
-                  )
-                )
               }
-              onBeginNodeMove={(_ids) => pushHistory()}
-              onConnect={handleConnect}
-              isDarkMode={isDarkMode}
-              showPorts={showPorts}
-              snapToGrid={snapToGrid}
-              activeTool={activeTool}
-              onAddDrawing={handleAddDrawing}
-              onOpenInspector={() => {
-                if (selectedNodeIds.length <= 1) {
-                  setIsInspectorOpen(true);
-                  if (isMobileViewport) {
-                    setIsSidebarOpen(false);
-                  }
-                }
-              }}
-              onAddNode={handleAddNode}
-              showSwimlanes={showSwimlanes}
-              swimlaneLabels={swimlaneLabels}
-              gridMode={gridMode}
-              viewport={viewport}
-              onViewportChange={setViewport}
-            />
+            }}
+            onAddNode={handleAddNode}
+            showSwimlanes={showSwimlanes}
+            swimlaneLabels={swimlaneLabels}
+            gridMode={gridMode}
+            overlayMode={overlayMode}
+            showMinimap={showMinimap}
+            viewport={viewport}
+            onViewportChange={setViewport}
+            onPointerWorldChange={setPointerWorld}
+            exportLayerRef={exportLayerRef}
+          />
 
-            <div className="absolute left-2 top-2 z-20 max-w-[calc(100%-1rem)] md:left-3 md:top-3">
-              {isQuickStartVisible && (
-                <div
-                  data-testid="quickstart-panel"
-                  className={`mb-2 w-[min(22rem,calc(100vw-1rem))] rounded-lg border px-3 py-3 shadow-sm ${
-                    isDarkMode
-                      ? 'border-blue-500/30 bg-slate-900 text-slate-100'
-                      : 'border-blue-200 bg-white text-slate-700'
-                  }`}
-                >
-                  <div className="mb-2 flex items-start justify-between gap-2">
-                    <div>
-                      <h2 className="text-xs font-bold uppercase tracking-[0.14em] text-blue-600 dark:text-blue-300">
-                        Quick Start
-                      </h2>
-                      <p className="mt-1 text-[11px] leading-relaxed">
-                        Complete this MVP flow once:
-                      </p>
-                    </div>
-                    <button
-                      data-testid="quickstart-dismiss"
-                      onClick={dismissQuickStart}
-                      className={`rounded-md border px-2 py-1 text-[10px] font-semibold ${
-                        isDarkMode
-                          ? 'border-slate-700 text-slate-200 hover:bg-slate-800'
-                          : 'border-slate-300 text-slate-600 hover:bg-slate-100'
-                      }`}
-                    >
-                      Dismiss
-                    </button>
-                  </div>
-                  <ol className="space-y-1 pl-4 text-[11px]">
-                    <li>1. Add or edit a node/connector.</li>
-                    <li>2. Click <span className="mono">Export JSON</span>.</li>
-                    <li>3. Click <span className="mono">Reset</span>, then <span className="mono">Import JSON</span> to restore.</li>
-                  </ol>
-                </div>
-              )}
+          <div className="absolute left-2 top-2 z-20 max-w-[calc(100%-1rem)] md:left-3 md:top-3">
+            {isQuickStartVisible && (
               <div
-                className={`pointer-events-none hidden rounded-md border px-3 py-2 text-[11px] font-medium shadow-sm md:block ${
-                  isDarkMode
-                    ? 'border-slate-700 bg-slate-900 text-slate-200'
-                    : 'border-slate-300 bg-white text-slate-600'
+                data-testid="quickstart-panel"
+                className={`mb-2 w-[min(22rem,calc(100vw-1rem))] rounded-lg border px-3 py-3 shadow-sm ${
+                  isDarkMode ? 'border-blue-500/30 bg-slate-900 text-slate-100' : 'border-blue-200 bg-white text-slate-700'
                 }`}
               >
-                Tip: Shift-click or drag-select for multi-select, hold <span className="mono">Space</span> to pan, use <span className="mono">Cmd/Ctrl+D</span> to duplicate.
-              </div>
-            </div>
-
-            <div
-              className="absolute left-1/2 z-30 w-full max-w-6xl -translate-x-1/2 px-2 md:px-4"
-              style={{ bottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
-            >
-              <div className="flex flex-col items-center gap-2">
-                {isLayoutPanelOpen && (
-                  <div
-                  className={`surface-ring w-full max-w-4xl rounded-xl border p-3 ${
-                    isDarkMode
-                      ? 'border-slate-700 bg-slate-800/95'
-                      : 'border-slate-200 bg-white'
-                  }`}
+                <div className="mb-2 flex items-start justify-between gap-2">
+                  <div>
+                    <h2 className="text-xs font-bold uppercase tracking-[0.14em] text-blue-600 dark:text-blue-300">Quick Start</h2>
+                    <p className="mt-1 text-[11px] leading-relaxed">Complete this MVP flow once:</p>
+                  </div>
+                  <button
+                    data-testid="quickstart-dismiss"
+                    onClick={dismissQuickStart}
+                    className={`rounded-md border px-2 py-1 text-[10px] font-semibold ${
+                      isDarkMode ? 'border-slate-700 text-slate-200 hover:bg-slate-800' : 'border-slate-300 text-slate-600 hover:bg-slate-100'
+                    }`}
                   >
-                    <div className="mb-3 flex items-center justify-between">
-                      <div>
-                        <h3 className="text-sm font-semibold">Canvas Layout</h3>
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                          Toggle swimlanes and switch between none, grid, or dots.
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => setIsLayoutPanelOpen(false)}
-                        aria-label="Close layout panel"
-                        className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-                        title="Close layout panel"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </div>
-
-                    <div className="mb-3 flex flex-wrap items-center gap-2">
-                      <button
-                        onClick={handleToggleSwimlanes}
-                        aria-pressed={showSwimlanes}
-                        className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${
-                          showSwimlanes
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
-                        }`}
-                      >
-                        {showSwimlanes ? 'Swimlanes: On' : 'Swimlanes: Off'}
-                      </button>
-
-                      <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-800">
-                        {[
-                          { id: 'none', label: 'None' },
-                          { id: 'lines', label: 'Grid' },
-                          { id: 'dots', label: 'Dots' }
-                        ].map((mode) => (
-                          <button
-                            key={mode.id}
-                            onClick={() => setGridMode(mode.id as 'none' | 'lines' | 'dots')}
-                            aria-pressed={gridMode === mode.id}
-                            className={`rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors ${
-                              gridMode === mode.id
-                                ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-200'
-                                : 'text-slate-600 hover:bg-white dark:text-slate-300 dark:hover:bg-slate-700'
-                            }`}
-                          >
-                            {mode.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {showSwimlanes && (
-                      <div className="space-y-2">
-                        <div className="max-h-44 space-y-2 overflow-y-auto pr-1">
-                          {swimlaneLabels.map((label, idx) => (
-                            <div key={`swimlane-label-${idx}`} className="flex items-center gap-2">
-                              <span className="w-16 text-[11px] font-semibold text-slate-500">Lane {idx + 1}</span>
-                              <input
-                                value={label}
-                                onChange={(e) => handleUpdateSwimlaneLabel(idx, e.target.value)}
-                                placeholder={`Swimlane ${idx + 1}`}
-                                className="flex-1 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                              />
-                              <button
-                                onClick={() => handleRemoveSwimlane(idx)}
-                                disabled={swimlaneLabels.length <= 2}
-                                className="rounded-lg px-2 py-1.5 text-xs font-semibold text-rose-600 transition-colors hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-rose-500/20"
-                                title={swimlaneLabels.length <= 2 ? 'Keep at least two lanes' : 'Remove lane'}
-                              >
-                                Remove
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                        <button
-                          onClick={handleAddSwimlane}
-                          className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-                        >
-                          <Plus className="h-3.5 w-3.5" />
-                          Add Swimlane
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                <div
-                  className={`surface-ring w-full rounded-xl border px-3 py-2 ${
-                    isDarkMode
-                      ? 'border-slate-700 bg-slate-800/95'
-                      : 'border-slate-200 bg-white'
-                  }`}
-                >
-                  <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="flex items-start gap-2 overflow-x-auto pb-1 lg:flex-wrap lg:overflow-visible">
-                      <div className="shrink-0 space-y-1">
-                        <div className="px-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
-                          Tool
-                        </div>
-                        <div
-                          className={`flex items-center gap-1 rounded-md border p-1 ${
-                            isDarkMode
-                              ? 'border-slate-700 bg-slate-900'
-                              : 'border-slate-300 bg-slate-50'
-                          }`}
-                        >
-                          <button
-                            onClick={() => setActiveTool('select')}
-                            aria-pressed={activeTool === 'select'}
-                            className={`flex h-8 items-center gap-1 rounded-md px-2.5 text-xs font-medium ${
-                              activeTool === 'select'
-                                ? 'bg-blue-600 text-white shadow-sm'
-                                : 'text-slate-600 hover:bg-white dark:text-slate-300 dark:hover:bg-slate-700'
-                            }`}
-                            title="Select and move"
-                            aria-label="Select tool"
-                          >
-                            <MousePointer2 className="h-4 w-4" />
-                            <span className="hidden sm:inline">Select</span>
-                          </button>
-                          <button
-                            onClick={() => setActiveTool('draw')}
-                            aria-pressed={activeTool === 'draw'}
-                            className={`flex h-8 items-center gap-1 rounded-md px-2.5 text-xs font-medium ${
-                              activeTool === 'draw'
-                                ? 'bg-blue-600 text-white shadow-sm'
-                                : 'text-slate-600 hover:bg-white dark:text-slate-300 dark:hover:bg-slate-700'
-                            }`}
-                            title="Click ports to connect nodes"
-                            aria-label="Connect tool"
-                          >
-                            <Pencil className="h-4 w-4" />
-                            <span className="hidden sm:inline">Connect</span>
-                          </button>
-                          <button
-                            onClick={() => setActiveTool('text')}
-                            aria-pressed={activeTool === 'text'}
-                            className={`flex h-8 items-center gap-1 rounded-md px-2.5 text-xs font-medium ${
-                              activeTool === 'text'
-                                ? 'bg-blue-600 text-white shadow-sm'
-                                : 'text-slate-600 hover:bg-white dark:text-slate-300 dark:hover:bg-slate-700'
-                            }`}
-                            title="Place text box"
-                            aria-label="Text tool"
-                          >
-                            <TypeIcon className="h-4 w-4" />
-                            <span className="hidden sm:inline">Text</span>
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="shrink-0 space-y-1">
-                        <div className="px-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
-                          Insert
-                        </div>
-                        <div
-                          className={`flex items-center gap-1 rounded-md border p-1 ${
-                            isDarkMode
-                              ? 'border-slate-700 bg-slate-900'
-                              : 'border-slate-300 bg-slate-50'
-                          }`}
-                        >
-                          <button
-                            onClick={handleAutoConnectEdge}
-                            className="flex h-8 items-center gap-1 rounded-md px-2.5 text-xs font-medium text-slate-600 transition-colors hover:bg-white dark:text-slate-300 dark:hover:bg-slate-700"
-                            title="Auto-connect from selected node, or nearest unlinked pair"
-                            aria-label="Auto-connect edge"
-                          >
-                            <Sparkles className="h-4 w-4" />
-                            <span className="hidden sm:inline">Auto Edge</span>
-                          </button>
-                          <DraggableConnectorButton
-                            onClick={() => handleAddConnector()}
-                            onNativeDragStart={handleConnectorNativeDragStart}
-                          />
-                        </div>
-                      </div>
-
-                      <div className="shrink-0 space-y-1">
-                        <div className="px-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
-                          Canvas
-                        </div>
-                        <div
-                          className={`flex items-center gap-1 rounded-md border p-1 ${
-                            isDarkMode
-                              ? 'border-slate-700 bg-slate-900'
-                              : 'border-slate-300 bg-slate-50'
-                          }`}
-                        >
-                          <button
-                            onClick={toggleShowPorts}
-                            aria-pressed={showPorts}
-                            className={`flex h-8 items-center gap-1 rounded-md px-2.5 text-xs font-medium ${
-                              showPorts
-                                ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-200'
-                                : 'text-slate-600 hover:bg-white dark:text-slate-300 dark:hover:bg-slate-700'
-                            }`}
-                            title="Toggle ports"
-                            aria-label="Toggle ports"
-                          >
-                            <CircleDot className="h-4 w-4" />
-                            <span className="hidden sm:inline">Ports</span>
-                          </button>
-                          <button
-                            onClick={toggleLayoutPanel}
-                            aria-pressed={isLayoutPanelOpen}
-                            className={`flex h-8 items-center gap-1 rounded-md px-2.5 text-xs font-medium ${
-                              isLayoutPanelOpen
-                                ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-200'
-                                : 'text-slate-600 hover:bg-white dark:text-slate-300 dark:hover:bg-slate-700'
-                            }`}
-                            title="Open layout controls"
-                            aria-label="Open layout controls"
-                          >
-                            <Rows3 className="h-4 w-4" />
-                            <span className="hidden sm:inline">Layout</span>
-                          </button>
-                          <button
-                            onClick={() => setSnapToGrid((prev) => !prev)}
-                            aria-pressed={snapToGrid}
-                            className={`flex h-8 items-center gap-1 rounded-md px-2.5 text-xs font-medium ${
-                              snapToGrid
-                                ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-200'
-                                : 'text-slate-600 hover:bg-white dark:text-slate-300 dark:hover:bg-slate-700'
-                            }`}
-                            title="Toggle snap to grid while dragging"
-                            aria-label="Toggle snap to grid"
-                          >
-                            <span className="mono text-[10px]">{snapToGrid ? 'Snap:On' : 'Snap:Off'}</span>
-                          </button>
-                          <button
-                            onClick={handleDelete}
-                            className="flex h-8 items-center gap-1 rounded-md px-2.5 text-xs font-medium text-slate-600 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:text-slate-300 dark:hover:bg-rose-500/20 dark:hover:text-rose-300"
-                            title="Delete selected"
-                            aria-label="Delete selected item"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                            <span className="hidden sm:inline">Delete</span>
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="shrink-0 space-y-1">
-                        <div className="px-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
-                          Arrange
-                        </div>
-                        <div
-                          className={`flex items-center gap-1 rounded-md border p-1 ${
-                            isDarkMode
-                              ? 'border-slate-700 bg-slate-900'
-                              : 'border-slate-300 bg-slate-50'
-                          }`}
-                        >
-                          <button
-                            onClick={handleDuplicateSelection}
-                            disabled={selectedNodeIds.length === 0}
-                            className="flex h-8 items-center gap-1 rounded-md px-2.5 text-xs font-medium text-slate-600 transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700"
-                            title="Duplicate selected nodes"
-                            aria-label="Duplicate selected nodes"
-                          >
-                            <span className="hidden sm:inline">Duplicate</span>
-                            <span className="sm:hidden">Dup</span>
-                          </button>
-                          <button
-                            onClick={() => handleAlignSelectedNodes('left')}
-                            disabled={selectedNodeIds.length < 2}
-                            className="h-8 rounded-md px-2 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700"
-                            title="Align left"
-                            aria-label="Align selected left"
-                          >
-                            L
-                          </button>
-                          <button
-                            onClick={() => handleAlignSelectedNodes('center')}
-                            disabled={selectedNodeIds.length < 2}
-                            className="h-8 rounded-md px-2 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700"
-                            title="Align center"
-                            aria-label="Align selected center"
-                          >
-                            C
-                          </button>
-                          <button
-                            onClick={() => handleAlignSelectedNodes('right')}
-                            disabled={selectedNodeIds.length < 2}
-                            className="h-8 rounded-md px-2 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700"
-                            title="Align right"
-                            aria-label="Align selected right"
-                          >
-                            R
-                          </button>
-                          <button
-                            onClick={handleDistributeSelectedNodes}
-                            disabled={selectedNodeIds.length < 3}
-                            className="h-8 rounded-md px-2 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-700"
-                            title="Distribute horizontally"
-                            aria-label="Distribute selected horizontally"
-                          >
-                            Dist
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="shrink-0 space-y-1">
-                      <div className="px-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
-                        Edge
-                      </div>
-                      <div
-                        className={`flex items-center gap-1 rounded-md border px-2 py-1 ${
-                          isDarkMode
-                            ? 'border-slate-700 bg-slate-900'
-                            : 'border-slate-300 bg-slate-50'
-                        }`}
-                      >
-                        <span className="mr-1 hidden text-[10px] font-medium uppercase tracking-[0.1em] text-slate-500 lg:inline">
-                          Link Style
-                        </span>
-                        {[
-                          { id: 'solid', icon: <Minus className="h-4 w-4" /> },
-                          { id: 'dashed', icon: <Divide className="h-4 w-4 rotate-90" /> },
-                          { id: 'dotted', icon: <MoreHorizontal className="h-4 w-4" /> }
-                        ].map((s) => (
-                          <button
-                            key={s.id}
-                            onClick={() => {
-                              if (!hasSelectedEdge) return;
-                              setActiveEdgeStyle(s.id as 'solid' | 'dashed' | 'dotted');
-                              const edge = edges.find((e) => e.id === selectedEdgeId);
-                              if (edge) handleUpdateEdge({ ...edge, style: s.id as 'solid' | 'dashed' | 'dotted' });
-                            }}
-                            disabled={!hasSelectedEdge}
-                            aria-pressed={hasSelectedEdge && activeEdgeStyle === s.id}
-                            className={`h-8 w-8 rounded-md p-0 transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-                              hasSelectedEdge && activeEdgeStyle === s.id
-                                ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-200'
-                                : 'text-slate-500 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-600'
-                            }`}
-                            title={`${s.id} line style`}
-                            aria-label={`${s.id} line style`}
-                          >
-                            {s.icon}
-                          </button>
-                        ))}
-                        <div
-                          className={`mx-0.5 h-5 w-px ${
-                            isDarkMode ? 'bg-slate-600' : 'bg-slate-300'
-                          }`}
-                        />
-                        <button
-                          onClick={() => {
-                            if (!hasSelectedEdge) return;
-                            const nc = { ...activeArrowConfig, showArrowHead: !activeArrowConfig.showArrowHead };
-                            setActiveArrowConfig(nc);
-                            const edge = edges.find((e) => e.id === selectedEdgeId);
-                            if (edge) handleUpdateEdge({ ...edge, ...nc });
-                          }}
-                          disabled={!hasSelectedEdge}
-                          aria-pressed={hasSelectedEdge && activeArrowConfig.showArrowHead}
-                          className={`h-8 w-8 rounded-md p-0 transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-                            hasSelectedEdge && activeArrowConfig.showArrowHead
-                              ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-200'
-                              : 'text-slate-500 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-600'
-                          }`}
-                          title="Toggle arrow head"
-                          aria-label="Toggle arrow head"
-                        >
-                          <ArrowRight className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (!hasSelectedEdge) return;
-                            const nc = { ...activeArrowConfig, showMidArrow: !activeArrowConfig.showMidArrow };
-                            setActiveArrowConfig(nc);
-                            const edge = edges.find((e) => e.id === selectedEdgeId);
-                            if (edge) handleUpdateEdge({ ...edge, ...nc });
-                          }}
-                          disabled={!hasSelectedEdge}
-                          aria-pressed={hasSelectedEdge && activeArrowConfig.showMidArrow}
-                          className={`h-8 w-8 rounded-md p-0 transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-                            hasSelectedEdge && activeArrowConfig.showMidArrow
-                              ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-200'
-                              : 'text-slate-500 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-600'
-                          }`}
-                          title="Toggle middle arrow"
-                          aria-label="Toggle middle arrow"
-                        >
-                          <ArrowRightLeft className="h-4 w-4" />
-                        </button>
-                        {!hasSelectedEdge && (
-                          <span className="ml-1 hidden text-[11px] font-medium text-slate-500 dark:text-slate-400 sm:inline">
-                            Select edge
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
+                    Dismiss
+                  </button>
                 </div>
+                <ol className="space-y-1 pl-4 text-[11px]">
+                  <li>1. Add or edit a node/connector.</li>
+                  <li>2. Click <span className="mono">Export JSON</span>.</li>
+                  <li>3. Click <span className="mono">Reset</span>, then <span className="mono">Import JSON</span> to restore.</li>
+                </ol>
               </div>
+            )}
+            <div
+              className={`pointer-events-none hidden rounded-md border px-3 py-2 text-[11px] font-medium shadow-sm md:block ${
+                isDarkMode ? 'border-slate-700 bg-slate-900 text-slate-200' : 'border-slate-300 bg-white text-slate-600'
+              }`}
+            >
+              Tip: Shift-click or drag-select for multi-select, hold <span className="mono">Space</span> to pan, use <span className="mono">Cmd/Ctrl+D</span> to duplicate.
             </div>
           </div>
 
-          <div
-            className={`overflow-hidden rounded-lg border transition-all duration-300 ${
-              isMobileViewport
-                ? `absolute inset-y-0 right-0 z-40 w-[min(92vw,340px)] transform ${
-                    isInspectorOpen ? 'translate-x-0 shadow-xl' : 'translate-x-[110%]'
-                  } transition-transform`
-                : `${isInspectorOpen ? 'w-[340px]' : 'w-0'} relative z-30`
-            } ${
-              isDarkMode
-                ? 'border-slate-700 bg-slate-800/95'
-                : 'border-slate-200 bg-white'
-            }`}
-          >
-            {isInspectorOpen && (
-              <Inspector
-                nodes={nodes}
-                edges={edges}
-                selectedNodeId={selectedNodeId}
-                selectedEdgeId={selectedEdgeId}
-                onUpdateNode={handleUpdateNode}
-                onUpdateEdge={handleUpdateEdge}
-                isDarkMode={isDarkMode}
-                onClose={() => setIsInspectorOpen(false)}
-              />
-            )}
-          </div>
-        </main>
-      </div>
+          <FloatingContextBar
+            isDarkMode={isDarkMode}
+            anchor={floatingContextAnchor()}
+            activeTool={activeTool}
+            onSetActiveTool={setActiveTool}
+            onAutoConnectEdge={handleAutoConnectEdge}
+            onAddConnector={() => handleAddConnector()}
+            onConnectorNativeDragStart={handleConnectorNativeDragStart}
+            onDelete={handleDelete}
+            onDuplicateSelection={handleDuplicateSelection}
+            onAlignLeft={() => handleAlignSelectedNodes('left')}
+            onAlignCenter={() => handleAlignSelectedNodes('center')}
+            onAlignRight={() => handleAlignSelectedNodes('right')}
+            onDistribute={handleDistributeSelectedNodes}
+            selectedNodeCount={selectedNodeIds.length}
+            hasSelectedEdge={hasSelectedEdge}
+            activeEdgeStyle={activeEdgeStyle}
+            onSetEdgeStyle={handleSetSelectedEdgeStyle}
+            arrowHeadEnabled={activeArrowConfig.showArrowHead}
+            midArrowEnabled={activeArrowConfig.showMidArrow}
+            onToggleArrowHead={handleToggleSelectedArrowHead}
+            onToggleMidArrow={handleToggleSelectedMidArrow}
+          />
+
+          <BottomStatusBar
+            isDarkMode={isDarkMode}
+            zoom={viewport.zoom}
+            onZoomIn={handleZoomIn}
+            onZoomOut={handleZoomOut}
+            onResetView={handleResetView}
+            onFitView={handleFitView}
+            snapToGrid={snapToGrid}
+            onToggleSnap={() => setSnapToGrid((prev) => !prev)}
+            gridMode={gridMode}
+            onCycleGridMode={handleCycleGridMode}
+            pointerWorld={pointerWorld}
+            selectedNodeCount={selectedNodeIds.length}
+            hasSelectedEdge={hasSelectedEdge}
+            showPorts={showPorts}
+            onTogglePorts={toggleShowPorts}
+            showMinimap={showMinimap}
+            onToggleMinimap={() => setShowMinimap((prev) => !prev)}
+            onOpenCanvasControls={handleOpenCanvasControls}
+          />
+        </div>
+
+        <div
+          className={`overflow-hidden rounded-lg border transition-all duration-300 ${
+            isMobileViewport
+              ? `absolute inset-y-0 right-0 z-40 w-[min(92vw,340px)] transform ${
+                  isInspectorOpen ? 'translate-x-0 shadow-xl' : 'translate-x-[110%]'
+                } transition-transform`
+              : `${isInspectorOpen ? 'w-[340px]' : 'w-0'} relative z-30`
+          } ${isDarkMode ? 'border-slate-700 bg-slate-800/95' : 'border-slate-200 bg-white'}`}
+        >
+          {isInspectorOpen && (
+            <Inspector
+              nodes={nodes}
+              edges={edges}
+              selectedNodeId={selectedNodeId}
+              selectedEdgeId={selectedEdgeId}
+              onUpdateNode={handleUpdateNode}
+              onUpdateEdge={handleUpdateEdge}
+              isDarkMode={isDarkMode}
+              onClose={() => setIsInspectorOpen(false)}
+              showSwimlanes={showSwimlanes}
+              onToggleSwimlanes={handleToggleSwimlanes}
+              swimlaneLabels={swimlaneLabels}
+              onAddSwimlane={handleAddSwimlane}
+              onRemoveSwimlane={handleRemoveSwimlane}
+              onUpdateSwimlaneLabel={handleUpdateSwimlaneLabel}
+              gridMode={gridMode}
+              onSetGridMode={setGridMode}
+              snapToGrid={snapToGrid}
+              onToggleSnapToGrid={() => setSnapToGrid((prev) => !prev)}
+              showPorts={showPorts}
+              onTogglePorts={toggleShowPorts}
+              hasRecoverySnapshot={hasRecoverySnapshot}
+              onRestoreRecovery={handleRestoreRecovery}
+              onResetCanvas={handleResetCanvas}
+              onImportDiagram={() => importInputRef.current?.click()}
+              onExportDiagram={handleExportDiagram}
+              activeTabRequest={inspectorTabRequest}
+            />
+          )}
+        </div>
+      </main>
+    </div>
   );
 };
 

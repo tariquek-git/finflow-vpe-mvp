@@ -1,11 +1,26 @@
 import React, { useMemo, useState } from 'react';
-import { EntityType } from '../types';
+import { EntityType, LaneGroupingMode, OverlayMode } from '../types';
 import { ENTITY_ICONS } from '../constants';
-import { ChevronDown, ChevronRight, Grid, Search } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronRight,
+  Grid,
+  Layers,
+  Search,
+  ShieldAlert,
+  Wallet
+} from 'lucide-react';
 
 interface SidebarProps {
   onAddNode: (type: EntityType) => void;
   isDarkMode: boolean;
+  showSwimlanes: boolean;
+  onToggleSwimlanes: () => void;
+  overlayMode: OverlayMode;
+  onToggleRiskOverlay: () => void;
+  onToggleLedgerOverlay: () => void;
+  laneGroupingMode: LaneGroupingMode;
+  onSetLaneGroupingMode: (mode: LaneGroupingMode) => void;
 }
 
 type LibrarySection = {
@@ -58,7 +73,17 @@ const getShortLabel = (type: EntityType) =>
     .replace(' Point', '')
     .replace(' / ', '/');
 
-const Sidebar = React.memo<SidebarProps>(({ onAddNode, isDarkMode }) => {
+const Sidebar = React.memo<SidebarProps>(({
+  onAddNode,
+  isDarkMode,
+  showSwimlanes,
+  onToggleSwimlanes,
+  overlayMode,
+  onToggleRiskOverlay,
+  onToggleLedgerOverlay,
+  laneGroupingMode,
+  onSetLaneGroupingMode
+}) => {
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     institutions: true,
     intermediaries: true,
@@ -96,7 +121,7 @@ const Sidebar = React.memo<SidebarProps>(({ onAddNode, isDarkMode }) => {
     <button
       key={type}
       draggable
-      onDragStart={(e) => onDragStartShape(e, type)}
+      onDragStart={(event) => onDragStartShape(event, type)}
       onClick={() => onAddNode(type)}
       className={`group flex aspect-square cursor-grab flex-col items-center justify-center rounded-lg border p-2 text-center transition-all duration-150 active:cursor-grabbing ${
         isDarkMode
@@ -124,13 +149,12 @@ const Sidebar = React.memo<SidebarProps>(({ onAddNode, isDarkMode }) => {
     </button>
   );
 
+  const riskEnabled = overlayMode === 'risk' || overlayMode === 'both';
+  const ledgerEnabled = overlayMode === 'ledger' || overlayMode === 'both';
+
   return (
     <div className={`flex h-full flex-col ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-      <div
-        className={`space-y-3 border-b px-4 py-4 ${
-          isDarkMode ? 'border-slate-700' : 'border-slate-200'
-        }`}
-      >
+      <div className={`space-y-3 border-b px-4 py-4 ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Grid className="h-4 w-4 text-blue-500" />
@@ -155,6 +179,61 @@ const Sidebar = React.memo<SidebarProps>(({ onAddNode, isDarkMode }) => {
               isDarkMode ? 'placeholder:text-slate-500' : 'placeholder:text-slate-400'
             }`}
           />
+        </div>
+
+        <div
+          className={`rounded-lg border p-2 ${
+            isDarkMode ? 'border-slate-700 bg-slate-900' : 'border-slate-200 bg-white'
+          }`}
+        >
+          <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.11em] text-slate-500 dark:text-slate-400">
+            View Controls
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              onClick={onToggleSwimlanes}
+              className={`status-chip ${showSwimlanes ? 'is-active' : ''}`}
+              title="Toggle swimlanes"
+            >
+              <Layers className="h-3.5 w-3.5" /> Swimlanes
+            </button>
+            <button
+              type="button"
+              data-testid="toolbar-toggle-risk-overlay"
+              onClick={onToggleRiskOverlay}
+              className={`status-chip ${riskEnabled ? 'is-active' : ''}`}
+              title="Toggle risk overlay"
+            >
+              <ShieldAlert className="h-3.5 w-3.5" /> Risk
+            </button>
+            <button
+              type="button"
+              data-testid="toolbar-toggle-ledger-overlay"
+              onClick={onToggleLedgerOverlay}
+              className={`status-chip ${ledgerEnabled ? 'is-active' : ''}`}
+              title="Toggle ledger overlay"
+            >
+              <Wallet className="h-3.5 w-3.5" /> Ledger
+            </button>
+          </div>
+
+          <div className="mt-2">
+            <label className="ml-0.5 text-[10px] font-semibold uppercase tracking-[0.09em] text-slate-500 dark:text-slate-400">
+              Lane Grouping
+            </label>
+            <select
+              value={laneGroupingMode}
+              onChange={(event) => onSetLaneGroupingMode(event.target.value as LaneGroupingMode)}
+              className="ui-input mt-1 h-8 w-full cursor-pointer px-2 text-xs"
+            >
+              <option value="manual">Manual</option>
+              <option value="entity">Entity Type</option>
+              <option value="regulatory">Regulatory Domain</option>
+              <option value="geography">Geography</option>
+              <option value="ledger">Ledger Layer</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -185,7 +264,11 @@ const Sidebar = React.memo<SidebarProps>(({ onAddNode, isDarkMode }) => {
                   }`}
                 >
                   <span className="flex items-center gap-2">
-                    {openSections[section.key] ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                    {openSections[section.key] ? (
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    ) : (
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    )}
                     {section.title}
                   </span>
                   <span className="text-[10px] normal-case tracking-normal opacity-70">
@@ -193,7 +276,7 @@ const Sidebar = React.memo<SidebarProps>(({ onAddNode, isDarkMode }) => {
                   </span>
                 </button>
 
-                {openSections[section.key] && (
+                {openSections[section.key] ? (
                   <div
                     className={`grid grid-cols-3 gap-1.5 border-t p-2 ${
                       isDarkMode
@@ -203,7 +286,7 @@ const Sidebar = React.memo<SidebarProps>(({ onAddNode, isDarkMode }) => {
                   >
                     {section.filteredTypes.map(renderShapeButton)}
                   </div>
-                )}
+                ) : null}
               </div>
             ))}
           </div>

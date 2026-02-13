@@ -1,7 +1,7 @@
 import { create } from 'zustand';
-import type { GridMode, ToolMode } from '../types';
+import type { GridMode, LaneGroupingMode, OverlayMode, ToolMode } from '../types';
 
-export type { ToolMode, GridMode };
+export type { ToolMode, GridMode, OverlayMode, LaneGroupingMode };
 
 export const UI_DEFAULT_SWIMLANE_LABELS = ['Swimlane 1', 'Swimlane 2'];
 
@@ -11,6 +11,8 @@ interface UIState {
   showSwimlanes: boolean;
   swimlaneLabels: string[];
   gridMode: GridMode;
+  overlayMode: OverlayMode;
+  laneGroupingMode: LaneGroupingMode;
   isLayoutPanelOpen: boolean;
   setActiveTool: (tool: ToolMode) => void;
   setShowPorts: (value: boolean) => void;
@@ -22,6 +24,8 @@ interface UIState {
   removeSwimlane: (index: number) => void;
   updateSwimlaneLabel: (index: number, label: string) => void;
   setGridMode: (mode: GridMode) => void;
+  setOverlayMode: (mode: OverlayMode) => void;
+  setLaneGroupingMode: (mode: LaneGroupingMode) => void;
   setIsLayoutPanelOpen: (value: boolean) => void;
   toggleLayoutPanel: () => void;
 }
@@ -32,6 +36,8 @@ export const useUIStore = create<UIState>((set) => ({
   showSwimlanes: true,
   swimlaneLabels: UI_DEFAULT_SWIMLANE_LABELS,
   gridMode: 'dots',
+  overlayMode: 'none',
+  laneGroupingMode: 'manual',
   isLayoutPanelOpen: false,
 
   setActiveTool: (tool) => set({ activeTool: tool }),
@@ -69,6 +75,8 @@ export const useUIStore = create<UIState>((set) => ({
     })),
 
   setGridMode: (mode) => set({ gridMode: mode }),
+  setOverlayMode: (mode) => set({ overlayMode: mode }),
+  setLaneGroupingMode: (mode) => set({ laneGroupingMode: mode }),
   setIsLayoutPanelOpen: (value) => set({ isLayoutPanelOpen: value }),
   toggleLayoutPanel: () => set((state) => ({ isLayoutPanelOpen: !state.isLayoutPanelOpen }))
 }));
