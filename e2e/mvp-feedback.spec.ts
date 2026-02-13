@@ -29,3 +29,49 @@ test('invalid import shows non-blocking error toast', async ({ page }) => {
 
   await expect(page.getByTestId('toast-message').first()).toContainText('Import failed');
 });
+
+test('export shows success toast', async ({ page }) => {
+  await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('button', { name: /Export JSON/i }).click()
+  ]);
+
+  await expect(page.getByTestId('toast-message').filter({ hasText: 'Diagram exported successfully.' })).toBeVisible();
+});
+
+test('reset shows success toast after backup save', async ({ page }) => {
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByTestId('toolbar-reset-canvas').click();
+
+  await expect(
+    page.getByTestId('toast-message').filter({ hasText: 'Canvas reset to starter template. Backup saved.' })
+  ).toBeVisible();
+});
+
+test('import valid JSON shows success toast', async ({ page }) => {
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('button', { name: /Export JSON/i }).click()
+  ]);
+  const stream = await download.createReadStream();
+  if (!stream) throw new Error('Could not read download stream');
+
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  const exportedJson = Buffer.concat(chunks).toString('utf8');
+
+  const fileChooserPromise = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: /Import JSON/i }).click();
+  const fileChooser = await fileChooserPromise;
+  await fileChooser.setFiles({
+    name: 'valid-finflow-export.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(exportedJson, 'utf8')
+  });
+
+  await expect(
+    page.getByTestId('toast-message').filter({ hasText: 'Diagram imported successfully. Backup saved.' })
+  ).toBeVisible();
+});

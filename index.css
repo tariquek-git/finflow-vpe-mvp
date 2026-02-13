@@ -60,6 +60,10 @@ body {
     0 1px 2px rgba(15, 23, 42, 0.08);
 }
 
+.primary-actions-strip {
+  min-width: max-content;
+}
+
 .dark .surface-ring {
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.06) inset,

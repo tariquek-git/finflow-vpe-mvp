@@ -59,6 +59,7 @@ const STORAGE_KEY = 'finflow-builder.diagram.v1';
 const LAYOUT_STORAGE_KEY = 'finflow-builder.layout.v1';
 const RECOVERY_STORAGE_KEY = 'finflow-builder.recovery.diagram.v1';
 const RECOVERY_LAYOUT_STORAGE_KEY = 'finflow-builder.recovery.layout.v1';
+const RECOVERY_META_STORAGE_KEY = 'finflow-builder.recovery.meta.v1';
 const HISTORY_LIMIT = 100;
 const MOBILE_BREAKPOINT = 1024;
 const CONNECTOR_DEFAULT_LENGTH = 220;
@@ -232,6 +233,37 @@ type ToastMessage = {
   tone: ToastTone;
   text: string;
 };
+type RecoveryMeta = {
+  lastSavedAt: string;
+};
+
+const parseRecoveryMeta = (value: unknown): RecoveryMeta | null => {
+  if (!value || typeof value !== 'object') return null;
+  const candidate = value as Partial<RecoveryMeta>;
+  if (typeof candidate.lastSavedAt !== 'string') return null;
+  const parsedDate = Date.parse(candidate.lastSavedAt);
+  if (Number.isNaN(parsedDate)) return null;
+  return { lastSavedAt: candidate.lastSavedAt };
+};
+
+const loadRecoveryMeta = (): RecoveryMeta | null => {
+  try {
+    const raw = window.localStorage.getItem(RECOVERY_META_STORAGE_KEY);
+    if (!raw) return null;
+    return parseRecoveryMeta(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+};
+
+const persistRecoveryMeta = (meta: RecoveryMeta): boolean => {
+  try {
+    window.localStorage.setItem(RECOVERY_META_STORAGE_KEY, JSON.stringify(meta));
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 const shouldRecordEditHistory = (
   ref: React.MutableRefObject<EditMergeState>,
@@ -320,6 +352,7 @@ const App: React.FC = () => {
   const [viewport, setViewport] = useState<ViewportTransform>({ x: 0, y: 0, zoom: 1 });
   const [storageWarning, setStorageWarning] = useState<string | null>(null);
   const [hasRecoverySnapshot, setHasRecoverySnapshot] = useState(false);
+  const [recoveryLastSavedAt, setRecoveryLastSavedAt] = useState<string | null>(null);
   
   // Link Attributes State
   const [activeEdgeStyle, setActiveEdgeStyle] = useState<'solid' | 'dashed' | 'dotted'>('solid');
@@ -429,8 +462,16 @@ const App: React.FC = () => {
     (snapshot: DiagramSnapshot = getCurrentSnapshot(), layout: LayoutSettings = getCurrentLayout()) => {
       const diagramSaved = persistDiagramToStorage(RECOVERY_STORAGE_KEY, snapshot);
       const layoutSaved = persistLayoutToStorage(RECOVERY_LAYOUT_STORAGE_KEY, layout);
+      const nextMeta: RecoveryMeta = { lastSavedAt: new Date().toISOString() };
+      const metaSaved = persistRecoveryMeta(nextMeta);
       if (diagramSaved && layoutSaved) {
         setHasRecoverySnapshot(true);
+        if (metaSaved) {
+          setRecoveryLastSavedAt(nextMeta.lastSavedAt);
+        }
+        if (!metaSaved) {
+          setStorageWarning('Recovery backup saved, but backup timestamp metadata could not be written.');
+        }
         return true;
       }
       setStorageWarning(
@@ -454,7 +495,13 @@ const App: React.FC = () => {
     if (persistedLayout) {
       applyLayoutSettings(persistedLayout);
     }
-    setHasRecoverySnapshot(!!loadDiagramFromStorage(RECOVERY_STORAGE_KEY));
+    const persistedRecoveryDiagram = loadDiagramFromStorage(RECOVERY_STORAGE_KEY);
+    setHasRecoverySnapshot(!!persistedRecoveryDiagram);
+    if (persistedRecoveryDiagram) {
+      setRecoveryLastSavedAt(loadRecoveryMeta()?.lastSavedAt || null);
+    } else {
+      setRecoveryLastSavedAt(null);
+    }
     hasLoadedFromStorage.current = true;
   }, [applyLayoutSettings, applySnapshot]);
 
@@ -1024,7 +1071,8 @@ const App: React.FC = () => {
     setSelectedNodeIds([]);
     setSelectedEdgeId(null);
     setIsInspectorOpen(false);
-  }, [applySnapshot, pushHistory, saveRecoverySnapshot]);
+    pushToast('Canvas reset to starter template. Backup saved.', 'success');
+  }, [applySnapshot, pushHistory, pushToast, saveRecoverySnapshot]);
 
   const handleRestoreRecovery = useCallback(() => {
     const recoveryDiagram = loadDiagramFromStorage(RECOVERY_STORAGE_KEY);
@@ -1034,6 +1082,7 @@ const App: React.FC = () => {
         'warning'
       );
       setHasRecoverySnapshot(false);
+      setRecoveryLastSavedAt(null);
       return;
     }
 
@@ -1047,6 +1096,7 @@ const App: React.FC = () => {
     setSelectedEdgeId(null);
     setIsInspectorOpen(false);
     setHasRecoverySnapshot(true);
+    setRecoveryLastSavedAt(loadRecoveryMeta()?.lastSavedAt || null);
     pushToast('Recovery snapshot restored.', 'success');
   }, [applyLayoutSettings, applySnapshot, pushHistory, pushToast]);
 
@@ -1072,6 +1122,7 @@ const App: React.FC = () => {
         if (parsed.layout) {
           applyLayoutSettings(parsed.layout);
         }
+        pushToast('Diagram imported successfully. Backup saved.', 'success');
       } catch (error) {
         console.error('Import failed:', error);
         pushToast('Import failed. Use a valid FinFlow JSON export file.', 'error');
@@ -1081,6 +1132,18 @@ const App: React.FC = () => {
     },
     [applyLayoutSettings, applySnapshot, pushHistory, pushToast, saveRecoverySnapshot]
   );
+
+  const handleExportDiagram = useCallback(() => {
+    const payload: ExportPayloadV2 = createExportPayload(getCurrentSnapshot(), getCurrentLayout());
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `finflow-diagram-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    pushToast('Diagram exported successfully.', 'success');
+  }, [getCurrentLayout, getCurrentSnapshot, pushToast]);
 
   const hasSelectedEdge = !!selectedEdgeId && edges.some((edge) => edge.id === selectedEdgeId);
 
@@ -1330,6 +1393,25 @@ const App: React.FC = () => {
             >
               {nodes.length} nodes | {edges.length} links
             </span>
+            <span
+              data-testid="backup-status-indicator"
+              className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                hasRecoverySnapshot
+                  ? isDarkMode
+                    ? 'bg-emerald-500/20 text-emerald-200'
+                    : 'bg-emerald-100 text-emerald-700'
+                  : isDarkMode
+                    ? 'bg-amber-500/20 text-amber-200'
+                    : 'bg-amber-100 text-amber-700'
+              }`}
+              title={
+                hasRecoverySnapshot && recoveryLastSavedAt
+                  ? `Last backup: ${new Date(recoveryLastSavedAt).toLocaleString()}`
+                  : 'No backup created yet'
+              }
+            >
+              {hasRecoverySnapshot ? 'Backup: Available' : 'Backup: Not yet created'}
+            </span>
             <a
               href={feedbackHref}
               target="_blank"
@@ -1468,71 +1550,74 @@ const App: React.FC = () => {
               {isDarkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </button>
 
-            <button
-              onClick={handleRestoreRecovery}
-              data-testid="toolbar-restore"
-              title={
-                hasRecoverySnapshot
-                  ? 'Restore the backup captured before reset/import'
-                  : 'No backup yet. Click to see recovery guidance.'
-              }
-              className={`shrink-0 flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold transition ${
-                isDarkMode
-                  ? hasRecoverySnapshot
-                    ? 'border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-700'
-                    : 'border-amber-500/40 bg-amber-500/10 text-amber-100 hover:bg-amber-500/20'
-                  : hasRecoverySnapshot
-                    ? 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
-                    : 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100'
+            <div
+              data-testid="primary-actions-strip"
+              className={`primary-actions-strip shrink-0 rounded-md border px-2 py-1 ${
+                isDarkMode ? 'border-slate-700 bg-slate-900' : 'border-slate-300 bg-white'
               }`}
             >
-              <LifeBuoy className="h-4 w-4" />
-              <span className="hidden sm:inline">Restore Backup</span>
-            </button>
+              <div className="mb-1 px-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+                Primary Actions
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={handleRestoreRecovery}
+                  data-testid="toolbar-restore"
+                  title={
+                    hasRecoverySnapshot
+                      ? 'Restore the backup captured before reset/import'
+                      : 'No backup yet. Click to see recovery guidance.'
+                  }
+                  className={`shrink-0 flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold transition ${
+                    isDarkMode
+                      ? hasRecoverySnapshot
+                        ? 'border-slate-700 bg-slate-800 text-slate-100 hover:bg-slate-700'
+                        : 'border-amber-500/40 bg-amber-500/10 text-amber-100 hover:bg-amber-500/20'
+                      : hasRecoverySnapshot
+                        ? 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
+                        : 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100'
+                  }`}
+                >
+                  <LifeBuoy className="h-4 w-4" />
+                  <span>Restore Backup</span>
+                </button>
 
-            <button
-              onClick={handleResetCanvas}
-              data-testid="toolbar-reset-canvas"
-              title="Reset to starter template (saves backup first)"
-              className={`shrink-0 flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold transition ${
-                isDarkMode
-                  ? 'border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-700'
-                  : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
-              }`}
-            >
-              <RefreshCw className="h-4 w-4" />
-              <span className="hidden sm:inline">Reset</span>
-            </button>
+                <button
+                  onClick={handleResetCanvas}
+                  data-testid="toolbar-reset-canvas"
+                  title="Reset to starter template (saves backup first)"
+                  className={`shrink-0 flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold transition ${
+                    isDarkMode
+                      ? 'border-slate-700 bg-slate-800 text-slate-100 hover:bg-slate-700'
+                      : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  <span>Reset</span>
+                </button>
 
-            <button
-              onClick={() => importInputRef.current?.click()}
-              title="Import FinFlow JSON (current work is backed up first)"
-              className={`shrink-0 flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold transition ${
-                isDarkMode
-                  ? 'border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-700'
-                  : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
-              }`}
-            >
-              <Upload className="h-4 w-4" />
-              <span className="hidden sm:inline">Import JSON</span>
-            </button>
-            <button
-              onClick={() => {
-                const payload: ExportPayloadV2 = createExportPayload(getCurrentSnapshot(), getCurrentLayout());
-                const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `finflow-diagram-${Date.now()}.json`;
-                a.click();
-                URL.revokeObjectURL(url);
-              }}
-              title="Export current canvas as FinFlow JSON"
-              className="shrink-0 flex items-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-blue-700 dark:bg-blue-500 dark:text-white"
-            >
-              <Download className="h-4 w-4" />
-              <span className="hidden sm:inline">Export JSON</span>
-            </button>
+                <button
+                  onClick={() => importInputRef.current?.click()}
+                  title="Import FinFlow JSON (current work is backed up first)"
+                  className={`shrink-0 flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold transition ${
+                    isDarkMode
+                      ? 'border-slate-700 bg-slate-800 text-slate-100 hover:bg-slate-700'
+                      : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  <Upload className="h-4 w-4" />
+                  <span>Import JSON</span>
+                </button>
+                <button
+                  onClick={handleExportDiagram}
+                  title="Export current canvas as FinFlow JSON"
+                  className="shrink-0 flex items-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-blue-700 dark:bg-blue-500 dark:text-white"
+                >
+                  <Download className="h-4 w-4" />
+                  <span>Export JSON</span>
+                </button>
+              </div>
+            </div>
             <input
               ref={importInputRef}
               type="file"

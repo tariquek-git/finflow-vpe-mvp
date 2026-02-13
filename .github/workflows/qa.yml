@@ -47,3 +47,9 @@ jobs:
 
       - name: MVP feedback tests
         run: npm run test:mvp:feedback
+
+      - name: MVP mobile primary actions tests
+        run: npm run test:mvp:mobile-actions
+
+      - name: MVP recovery status tests
+        run: npm run test:mvp:recovery-status
