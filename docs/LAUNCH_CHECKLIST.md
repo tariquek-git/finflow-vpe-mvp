@@ -27,13 +27,18 @@
 - [x] SHA-256: `f7e57428994ab2ea12ee92e91cb575d149b6e6befd6733ab8263282c03635186`
 
 ## GitHub
-- [ ] Open PR to `main` (pending remote cutover decision)
+- [x] Back up legacy `main` as `main-legacy-2026-02-13`
+- [x] Promote `codex/bootstrap-ci-gate` lineage to `main` (remote `main` now points to `2686e60`)
+- [ ] Open PR to `main` (skipped due direct cutover path)
 - [ ] Require `qa` branch protection on `main` (pending hosted Git provider access)
+- [ ] Delete remote `codex/bootstrap-ci-gate` alias (blocked by remote push policy)
 
 ## Vercel
 - [ ] Connect project to repository (pending)
 - [ ] Configure production and preview deployments (pending)
 - [ ] Set `VITE_ENABLE_AI=false` in hosted environments (pending)
+- [ ] Deploy `v0.1.2-public-rc1` and run production smoke (pending hosted access)
+- [ ] Promote `v0.1.2` public tag after production smoke (blocked: remote already has `v0.1.2` tag on unrelated commit)
 
 ## Local-Only Notes
 - Release branch of record: `codex/ux-polish-prelaunch`
