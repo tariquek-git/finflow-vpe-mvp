@@ -1,17 +1,18 @@
-# Local Release Handoff (v0.1.2-local.1)
+# Local Release Handoff (v0.1.3-local)
 
 ## Release Identity
-- Release branch of record: `codex/ui-modern-refresh`
-- Stable baseline branch: `codex/bootstrap-ci-gate`
+- Release branch of record: `codex/vpe-interaction-mechanics`
+- Phase-1 foundation branch: `codex/vpe-foundation-visual`
+- Stable baseline branch: `codex/ui-modern-refresh`
 - Local remote source of truth: `/Users/tarique/Documents/banking-diagram-mvp-origin.git`
 - Local origin HEAD: `main` (post-cutover)
-- Release tag of record: `v0.1.2-local.1`
-- Release commit: `ebc59c66fedb9633a83ecc750f9fe6589037f92b`
-- Previous local release tag: `v0.1.2-local` at `b8d4f1045c51d9e5e955866c5f0af52e50aafab9`
+- Release tag of record: `v0.1.3-local`
+- Release commit: `bb21b995409526d13bb69ca5cb11f236b77c3793`
+- Previous local release tag: `v0.1.2-local.1` at `ebc59c66fedb9633a83ecc750f9fe6589037f92b`
 
 ## Gate Evidence (Run Date)
-- Run timestamp (UTC): `2026-02-13 04:40:16Z` to `2026-02-13 04:41:05Z`
-- Run timestamp (local): `2026-02-12 23:40:16 EST` to `2026-02-12 23:41:05 EST`
+- Run timestamp (UTC): `2026-02-13 05:09:31Z` to `2026-02-13 05:10:20Z`
+- Run timestamp (local): `2026-02-13 00:09:31 EST` to `2026-02-13 00:10:20 EST`
 
 All commands passed with exit code `0`:
 1. `npm run doctor`
@@ -20,25 +21,29 @@ All commands passed with exit code `0`:
 4. `npm run test:mvp`
 5. `npm run test:mvp:onboarding`
 6. `npm run test:mvp:feedback`
-7. `npm run test:qa` (24 passed)
+7. `npm run test:qa` (29 passed)
 
 ## Frozen Deliverable
-- Artifact: `release-artifacts/finflow_review-v0.1.2-local.1.tar.gz`
-- SHA-256 file: `release-artifacts/finflow_review-v0.1.2-local.1.sha256`
+- Artifact: `release-artifacts/finflow_review-v0.1.3-local.tar.gz`
+- SHA-256 file: `release-artifacts/finflow_review-v0.1.3-local.sha256`
 - SHA-256:
-  - `cb1eaf114b53a0c621f7228d4a4caa8b318773aa55adb4ddbb839b54c3b1f7c5`
+  - `c81ff4789d63499f688abaa62f25036083eb425b2a7ae88235622d97a0c1dd49`
 
-## UI Refresh Scope Included
-- Semantic design token layer and reusable `ff-*` utility classes in `index.css`.
-- Tokenized app shell/header/actions/toast styling in `App.tsx`.
-- Modernized panel and control styling in `components/Sidebar.tsx` and `components/Inspector.tsx`.
-- Refined node/edge chrome and canvas visuals in `components/FlowCanvas.tsx`.
-- Added manual visual QA checklist and before/after screenshot evidence in `docs/ui-baseline/`.
+## VPE Scope Included
+- Infinite Slate-50 canvas with technical dot-grid (2px dots, 24px spacing).
+- Detached glass floating top toolbar and left library panel.
+- Smart-card entity nodes with bento-style header/meta/status layout.
+- Gradient bezier data pipes with active-only flow particle animation.
+- Node selection context toolbar and cardinal connection handles.
+- 20px snap grid, red smart alignment guides, and 50–200% zoom clamp.
+- Inspector empty state upgraded to actionable `Canvas Settings`.
+- Drag ghost preview and drop spring animation for library placements.
 
 ## Notes
 - MVP behavior and data model remain unchanged (no backend/API/type changes).
 - Existing e2e-facing control IDs and labels remain stable.
 - AI-disabled public policy remains unchanged (`VITE_ENABLE_AI=false` default for public-safe flow).
+- Visual QA evidence refreshed in `docs/ui-baseline/after/`.
 
 ## Known Hosted Blockers
 - Branch protection is unavailable on the local bare remote.

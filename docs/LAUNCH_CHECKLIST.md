@@ -1,19 +1,20 @@
 # Local MVP Launch Checklist
 
-## Local Gate Evidence (v0.1.2-local.1)
+## Local Gate Evidence (v0.1.3-local)
 - [x] `npm run doctor`
 - [x] `npm run build`
 - [x] `npm run test:smoke`
 - [x] `npm run test:mvp`
 - [x] `npm run test:mvp:onboarding`
 - [x] `npm run test:mvp:feedback`
-- [x] `npm run test:mvp:help-reopen`
-- [x] `npm run test:mvp:mobile-toolbar`
 - [x] `npm run test:qa`
-- [x] Gate run timestamp (UTC): `2026-02-13 04:40:16Z` to `2026-02-13 04:41:05Z`
-- [x] Gate run timestamp (local): `2026-02-12 23:40:16 EST` to `2026-02-12 23:41:05 EST`
-- [x] Visual QA checklist added: `docs/UI_VISUAL_QA_CHECKLIST.md`
-- [x] Before/after baseline screenshots captured: `docs/ui-baseline/`
+- [x] Gate run timestamp (UTC): `2026-02-13 05:09:31Z` to `2026-02-13 05:10:20Z`
+- [x] Gate run timestamp (local): `2026-02-13 00:09:31 EST` to `2026-02-13 00:10:20 EST`
+- [x] VPE suites included in full QA:
+  - `e2e/vpe-canvas-mechanics.spec.ts`
+  - `e2e/vpe-node-context.spec.ts`
+- [x] Visual QA checklist expanded: `docs/UI_VISUAL_QA_CHECKLIST.md`
+- [x] Before/after baseline screenshots updated: `docs/ui-baseline/`
 
 ## Local Release Tags
 - [x] Baseline RC tag: `v0.1.0-mvp-rc1`
@@ -23,11 +24,12 @@
 - [x] Pre-launch UX RC tag: `v0.1.2-local-ux-rc1`
 - [x] Pre-launch local release: `v0.1.2-local`
 - [x] Modern refresh local release: `v0.1.2-local.1`
+- [x] VPE redesign local release: `v0.1.3-local`
 
 ## Local Deliverable Freeze
-- [x] Artifact: `release-artifacts/finflow_review-v0.1.2-local.1.tar.gz`
-- [x] Checksum: `release-artifacts/finflow_review-v0.1.2-local.1.sha256`
-- [x] SHA-256: `cb1eaf114b53a0c621f7228d4a4caa8b318773aa55adb4ddbb839b54c3b1f7c5`
+- [x] Artifact: `release-artifacts/finflow_review-v0.1.3-local.tar.gz`
+- [x] Checksum: `release-artifacts/finflow_review-v0.1.3-local.sha256`
+- [x] SHA-256: `c81ff4789d63499f688abaa62f25036083eb425b2a7ae88235622d97a0c1dd49`
 
 ## GitHub
 - [x] Back up legacy `main` as `main-legacy-2026-02-13`
@@ -59,6 +61,7 @@
 - [x] Hosted tag policy frozen to `v0.1.3-public-rc1` then `v0.1.3`.
 
 ## Local-Only Notes
-- Release branch of record: `codex/ui-modern-refresh`
-- Stable baseline branch: `codex/bootstrap-ci-gate`
+- Release branch of record: `codex/vpe-interaction-mechanics`
+- Phase-1 foundation branch: `codex/vpe-foundation-visual`
+- Stable baseline branch: `codex/ui-modern-refresh`
 - Local origin remains the source of truth for frozen local artifacts.

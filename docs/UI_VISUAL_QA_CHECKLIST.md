@@ -1,4 +1,4 @@
-# UI Visual QA Checklist (v0.1.2-local.1 candidate)
+# UI Visual QA Checklist (v0.1.3-local candidate)
 
 Use this checklist for manual sign-off after UI refresh. Execute in both light and dark mode.
 
