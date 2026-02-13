@@ -4,7 +4,7 @@
 - Release branch of record: `codex/uiux-v021-interaction-clarity`
 - Local remote source of truth: `/Users/tarique/Documents/banking-diagram-mvp-origin.git`
 - Release tag of record: `v0.2.1`
-- Release commit: `<pending-commit-hash>`
+- Release commit: `6e70bc8f58642f6850347c07467848cebb0e3b3b`
 - Release type: Local-first interaction clarity + de-clutter hardening
 
 ## Engineering Rules
