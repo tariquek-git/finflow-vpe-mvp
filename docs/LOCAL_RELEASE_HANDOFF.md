@@ -3,14 +3,15 @@
 ## Release Identity
 - Release branch of record: `codex/ux-polish-prelaunch`
 - Local remote source of truth: `/Users/tarique/Documents/banking-diagram-mvp-origin.git`
-- Local origin HEAD: `codex/bootstrap-ci-gate` (pre-cutover)
+- Local origin HEAD: `main` (post-cutover)
 - Release tag of record: `v0.1.2-local`
 - Release commit: `b8d4f1045c51d9e5e955866c5f0af52e50aafab9`
 - RC tag: `v0.1.2-local-ux-rc1` (same commit as `v0.1.2-local`)
+- Release docs snapshot commit: `873316bc64416d4b186be4139146487462b4593b`
 
 ## Gate Evidence (Run Date)
-- Run timestamp (UTC): `2026-02-13 03:59:07Z` to `2026-02-13 03:59:56Z`
-- Run timestamp (local): `2026-02-12 22:59:07 EST` to `2026-02-12 22:59:56 EST`
+- Run timestamp (UTC): `2026-02-13 04:07:40Z` to `2026-02-13 04:08:28Z`
+- Run timestamp (local): `2026-02-12 23:07:40 EST` to `2026-02-12 23:08:28 EST`
 
 All commands passed with exit code `0`:
 1. `npm run doctor`
@@ -37,3 +38,14 @@ All commands passed with exit code `0`:
   - `v0.1.2-public-rc1` pushed to remote at `2686e602419c07148425d3df0421e0722336f849`
   - `v0.1.2` exists remotely on unrelated commit `1462ea9d1e59c737fd239b3aae789658127807f4`; overwrite is blocked by policy.
 - Vercel deployment and hosted branch protection remain pending due missing hosted credentials/access.
+
+## Known Hosted Blockers
+- Branch protection is unavailable on the local bare remote.
+- Hosted deployment cannot proceed until a hosted Git provider repository is attached.
+- Public `v0.1.2` cannot be reused safely; first hosted launch must use `v0.1.3-public-rc1` then `v0.1.3`.
+
+## Local Pilot Status
+- Pilot runbook prepared at `docs/LOCAL_PILOT_RUNBOOK.md`.
+- Structured session log template prepared at `docs/LOCAL_PILOT_SESSION_LOG.csv`.
+- Real-user pilot sessions are pending (not executed in this environment).
+- No pilot-driven product fixes are present yet; no post-`v0.1.2-local` release tag was created.

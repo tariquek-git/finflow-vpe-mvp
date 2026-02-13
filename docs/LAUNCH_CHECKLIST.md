@@ -10,8 +10,8 @@
 - [x] `npm run test:mvp:help-reopen`
 - [x] `npm run test:mvp:mobile-toolbar`
 - [x] `npm run test:qa`
-- [x] Gate run timestamp (UTC): `2026-02-13 03:59:07Z` to `2026-02-13 03:59:56Z`
-- [x] Gate run timestamp (local): `2026-02-12 22:59:07 EST` to `2026-02-12 22:59:56 EST`
+- [x] Gate run timestamp (UTC): `2026-02-13 04:07:40Z` to `2026-02-13 04:08:28Z`
+- [x] Gate run timestamp (local): `2026-02-12 23:07:40 EST` to `2026-02-12 23:08:28 EST`
 
 ## Local Release Tags
 - [x] Baseline RC tag: `v0.1.0-mvp-rc1`
@@ -28,7 +28,7 @@
 
 ## GitHub
 - [x] Back up legacy `main` as `main-legacy-2026-02-13`
-- [x] Promote `codex/bootstrap-ci-gate` lineage to `main` (remote `main` now points to `685c1e7`)
+- [x] Promote `codex/bootstrap-ci-gate` lineage to `main` (remote `main` now points to `873316b`)
 - [ ] Open PR to `main` (skipped due direct cutover path)
 - [ ] Require `qa` branch protection on `main` (pending hosted Git provider access)
 - [ ] Delete remote `codex/bootstrap-ci-gate` alias (blocked by remote push policy)
@@ -39,6 +39,21 @@
 - [ ] Set `VITE_ENABLE_AI=false` in hosted environments (pending)
 - [ ] Deploy `v0.1.2-public-rc1` and run production smoke (pending hosted access)
 - [ ] Promote `v0.1.2` public tag after production smoke (blocked: remote already has `v0.1.2` tag on unrelated commit)
+
+## Known Hosted Blockers
+- Branch protection cannot be enforced on the local bare remote.
+- Vercel deployment cannot be completed without hosted repository access.
+- Remote `v0.1.2` tag already exists on unrelated history, so public launch should use `v0.1.3-public-rc1` then `v0.1.3`.
+
+## Local Pilot Validation (Pending)
+- [ ] Run 3 to 5 local user sessions.
+- [ ] Fill `docs/LOCAL_PILOT_SESSION_LOG.csv`.
+- [ ] Apply only high-severity first-session blockers.
+- [x] Pilot runbook created: `docs/LOCAL_PILOT_RUNBOOK.md`.
+
+## Hosted Migration Prep (Frozen)
+- [x] Checklist created: `docs/HOSTED_MIGRATION_CHECKLIST.md`.
+- [x] Hosted tag policy frozen to `v0.1.3-public-rc1` then `v0.1.3`.
 
 ## Local-Only Notes
 - Release branch of record: `codex/ux-polish-prelaunch`

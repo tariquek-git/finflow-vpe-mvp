@@ -65,4 +65,7 @@ Full gate (all e2e suites):
 
 - Release/tag policy: `docs/RELEASE_POLICY.md`
 - Launch checklist: `docs/LAUNCH_CHECKLIST.md`
+- Local pilot runbook: `docs/LOCAL_PILOT_RUNBOOK.md`
+- Local pilot log template: `docs/LOCAL_PILOT_SESSION_LOG.csv`
+- Hosted migration checklist: `docs/HOSTED_MIGRATION_CHECKLIST.md`
 - Vercel setup guide: `docs/VERCEL_SETUP.md`
