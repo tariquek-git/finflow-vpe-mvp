@@ -151,7 +151,7 @@ const DiagramEdge = React.memo(
           strokeWidth={isSelected ? 4 : edge.thickness || 2}
           strokeDasharray={strokeDash}
           fill="none"
-          className="transition-all duration-200"
+          className="transition-all duration-200 ease-out"
         />
 
         {edge.sequence !== undefined && edge.sequence > 0 && (
@@ -186,11 +186,7 @@ const DiagramEdge = React.memo(
         >
           <div className="flex flex-col items-center justify-center">
             <div
-              className={`rounded-md border px-2 py-0.5 text-[8px] font-bold uppercase tracking-tight whitespace-nowrap shadow ${
-                isDarkMode
-                  ? 'border-slate-700 bg-slate-900/95 text-slate-200'
-                  : 'border-slate-300 bg-white/95 text-slate-700'
-              }`}
+              className="ff-panel-muted rounded-md border px-2 py-0.5 text-[8px] font-bold uppercase tracking-tight whitespace-nowrap shadow"
             >
               {edge.label || edge.rail}
               {edge.amount && <span className="ml-1 text-emerald-500">${edge.amount}</span>}
@@ -229,14 +225,14 @@ const DiagramNode = React.memo(
     if (node.type === EntityType.ANCHOR) {
       return (
         <div
-          className={`absolute cursor-grab rounded-full border shadow-sm transition-transform hover:scale-125 active:cursor-grabbing ${
+          className={`absolute cursor-grab rounded-full border shadow-sm transition-transform duration-150 hover:scale-125 active:cursor-grabbing ${
             isSelected
-              ? 'bg-blue-500 ring-2 ring-blue-300'
+              ? 'bg-teal-600 ring-2 ring-teal-300'
               : node.isConnectorHandle
-                ? 'border-blue-400 bg-blue-100 dark:bg-blue-500/20'
+                ? 'border-teal-500 bg-teal-100 dark:bg-teal-500/20'
                 : isDarkMode
-                  ? 'border-slate-500 bg-slate-500'
-                  : 'border-slate-400 bg-slate-400'
+                  ? 'border-slate-500 bg-slate-600'
+                  : 'border-slate-400 bg-slate-300'
           }`}
           style={{ left: node.position.x, top: node.position.y, width: ANCHOR_SIZE, height: ANCHOR_SIZE, zIndex: 100 }}
           onMouseDown={(e) => onMouseDown(e, node.id)}
@@ -246,9 +242,9 @@ const DiagramNode = React.memo(
 
     return (
       <div
-        className={`group absolute flex flex-col items-center justify-center rounded-xl border shadow-sm transition-all ${
+        className={`group absolute flex flex-col items-center justify-center rounded-xl border transition-all duration-200 ease-out ${
           isSelected
-            ? 'scale-[1.02] ring-2 ring-blue-500 shadow-xl'
+            ? 'scale-[1.02] ring-2 ring-teal-500 shadow-2xl'
             : isDarkMode
               ? 'border-slate-700'
               : 'border-slate-300'
@@ -258,7 +254,7 @@ const DiagramNode = React.memo(
           top: node.position.y,
           width: node.width || NODE_WIDTH,
           height: node.height || NODE_HEIGHT,
-          backgroundColor: node.color || (isDarkMode ? '#1e293b' : 'white'),
+          backgroundColor: node.color || (isDarkMode ? '#1f2937' : '#f8fafc'),
           zIndex: isSelected ? 99 : 10
         }}
         onMouseDown={(e) => onMouseDown(e, node.id)}
@@ -266,12 +262,12 @@ const DiagramNode = React.memo(
       >
         <div className="pointer-events-none flex h-full w-full flex-col items-center justify-center">
           <div
-            className={`mb-1 flex h-8 w-8 items-center justify-center rounded-md border ${
+            className={`mb-1 flex h-8 w-8 items-center justify-center rounded-md border shadow-sm ${
               isDarkNode
                 ? 'border-white/20 bg-white/10'
                 : isDarkMode
-                  ? 'border-slate-700 bg-black/20'
-                  : 'border-slate-200 bg-slate-50'
+                  ? 'border-slate-600 bg-slate-800/80'
+                  : 'border-slate-200 bg-white'
             }`}
           >
             <span className={isDarkNode ? 'text-white' : ''}>
@@ -288,7 +284,7 @@ const DiagramNode = React.memo(
           [0, 1, 2, 3].map((idx) => (
             <button
               key={idx}
-              className="absolute z-50 h-3 w-3 rounded-full border-2 border-white bg-blue-500 opacity-80 shadow-sm transition-all hover:scale-150 md:opacity-0 md:group-hover:opacity-100 dark:border-slate-800"
+              className="absolute z-50 h-3 w-3 rounded-full border-2 border-white bg-teal-600 opacity-80 shadow-sm transition-all duration-150 hover:scale-150 md:opacity-0 md:group-hover:opacity-100 dark:border-slate-800"
               style={
                 idx === 0
                   ? { left: '50%', top: -6, transform: 'translateX(-50%)' }
@@ -617,8 +613,8 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
       }`}
       style={{
         background: isDarkMode
-          ? 'radial-gradient(1200px circle at 16% 0%, #2b3342 0%, #202327 45%, #171b22 100%)'
-          : 'radial-gradient(900px circle at 14% 0%, #ffffff 0%, #f6f8ff 42%, #eef2f8 100%)'
+          ? 'radial-gradient(1200px circle at 16% 0%, #273346 0%, #1b2431 48%, #101923 100%)'
+          : 'radial-gradient(980px circle at 12% 0%, #ffffff 0%, #f6fbfb 42%, #edf4fb 100%)'
       }}
       onMouseDown={handleCanvasMouseDown}
       onMouseMove={handleMouseMove}

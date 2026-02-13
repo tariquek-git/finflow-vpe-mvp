@@ -98,113 +98,68 @@ const Sidebar = React.memo<SidebarProps>(({ onAddNode, isDarkMode }) => {
       draggable
       onDragStart={(e) => onDragStartShape(e, type)}
       onClick={() => onAddNode(type)}
-      className={`group flex aspect-square cursor-grab flex-col items-center justify-center rounded-md border p-2 text-center transition-all active:cursor-grabbing ${
-        isDarkMode
-          ? 'border-slate-700 bg-slate-900 hover:border-blue-700 hover:bg-slate-800'
-          : 'border-slate-300 bg-white hover:border-blue-300 hover:bg-slate-50'
-      }`}
+      className="ff-panel-muted ff-focus group flex aspect-square cursor-grab flex-col items-center justify-center p-2 text-center transition-all duration-200 active:cursor-grabbing hover:-translate-y-[1px] hover:border-teal-500/50"
       title={`Drag ${type} to canvas`}
     >
-      <div
-        className={`mb-1.5 flex h-9 w-9 items-center justify-center rounded-md border ${
-          isDarkMode
-            ? 'border-slate-700 bg-slate-800 text-slate-200'
-            : 'border-slate-300 bg-white text-slate-700'
-        }`}
-      >
+      <div className="ff-panel-muted mb-1.5 flex h-9 w-9 items-center justify-center rounded-md border">
         {ENTITY_ICONS[type]}
       </div>
-      <span
-        className={`line-clamp-2 text-[10px] font-medium leading-tight ${
-          isDarkMode ? 'text-slate-300' : 'text-slate-600'
-        }`}
-      >
+      <span className="line-clamp-2 text-[10px] font-medium leading-tight text-[var(--color-text-secondary)]">
         {getShortLabel(type)}
       </span>
     </button>
   );
 
   return (
-    <div className={`flex h-full flex-col ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-      <div
-        className={`space-y-3 border-b px-4 py-4 ${
-          isDarkMode ? 'border-slate-700' : 'border-slate-300'
-        }`}
-      >
+    <div className="flex h-full flex-col text-[var(--color-text-primary)]">
+      <div className="ff-soft-divider space-y-3 border-b px-4 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Grid className="h-4 w-4 text-blue-500" />
-            <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+            <Grid className="h-4 w-4 text-[var(--color-accent-1)]" />
+            <span className="ff-muted-text text-xs font-semibold uppercase tracking-[0.14em]">
               Component Library
             </span>
           </div>
-          <span
-            className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-              isDarkMode ? 'bg-slate-700 text-slate-200' : 'bg-slate-100 text-slate-600'
-            }`}
-          >
+          <span className="ff-chip">
             {totalVisibleBlocks}
           </span>
         </div>
 
         <div className="relative">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+          <Search className="ff-muted-text pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2" />
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search blocks..."
-            className={`h-8 w-full rounded-md border pl-8 pr-2 text-xs outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 ${
-              isDarkMode
-                ? 'border-slate-700 bg-slate-900 text-slate-100 placeholder:text-slate-500'
-                : 'border-slate-300 bg-white text-slate-700 placeholder:text-slate-400'
-            }`}
+            className="ff-input ff-focus h-8 w-full pl-8 pr-2 text-xs outline-none"
           />
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-3">
         {sections.length === 0 ? (
-          <div
-            className={`rounded-md border px-3 py-4 text-center text-xs ${
-              isDarkMode
-                ? 'border-slate-700 bg-slate-900 text-slate-400'
-                : 'border-slate-300 bg-white text-slate-500'
-            }`}
-          >
+          <div className="ff-panel-muted ff-muted-text px-3 py-4 text-center text-xs">
             No matching blocks.
           </div>
         ) : (
           <div className="space-y-3">
             {sections.map((section) => (
-              <div
-                key={section.key}
-                className={`overflow-hidden rounded-md border ${
-                  isDarkMode ? 'border-slate-700 bg-slate-900' : 'border-slate-300 bg-white'
-                }`}
-              >
+              <div key={section.key} className="ff-panel-muted overflow-hidden border">
                 <button
                   onClick={() => toggleSection(section.key)}
-                  className={`flex w-full items-center justify-between px-3 py-2.5 text-[11px] font-semibold uppercase tracking-[0.12em] ${
-                    isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-50'
-                  }`}
+                  className="ff-btn-ghost ff-focus flex w-full items-center justify-between px-3 py-2.5 text-[11px] font-semibold uppercase tracking-[0.12em]"
                 >
                   <span className="flex items-center gap-2">
                     {openSections[section.key] ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                     {section.title}
                   </span>
-                  <span className="text-[10px] normal-case tracking-normal opacity-70">
+                  <span className="ff-muted-text text-[10px] normal-case tracking-normal">
                     {section.filteredTypes.length}
                   </span>
                 </button>
 
                 {openSections[section.key] && (
-                  <div
-                    className={`grid grid-cols-3 gap-1.5 border-t p-2 ${
-                      isDarkMode
-                        ? 'border-slate-700 bg-slate-950/40'
-                        : 'border-slate-200 bg-slate-50'
-                    }`}
-                  >
+                  <div className="ff-soft-divider grid grid-cols-3 gap-1.5 border-t bg-[color:var(--color-surface-2)] p-2">
                     {section.filteredTypes.map(renderShapeButton)}
                   </div>
                 )}

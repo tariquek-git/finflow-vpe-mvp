@@ -74,10 +74,10 @@ const Section: React.FC<{ title: string; icon: React.ReactNode; children?: React
   icon,
   children
 }) => (
-  <div className="mb-6 animate-in fade-in slide-in-from-right-1 duration-200">
-    <div className="mb-3 flex items-center gap-2 border-b px-1 pb-1.5 dark:border-slate-700">
-      <div className="text-blue-600 dark:text-blue-300">{icon}</div>
-      <h3 className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+  <div className="ff-motion-in mb-6">
+    <div className="ff-soft-divider mb-3 flex items-center gap-2 border-b px-1 pb-1.5">
+      <div className="text-[var(--color-accent-1)]">{icon}</div>
+      <h3 className="ff-muted-text text-[10px] font-semibold uppercase tracking-[0.12em]">
         {title}
       </h3>
     </div>
@@ -87,7 +87,7 @@ const Section: React.FC<{ title: string; icon: React.ReactNode; children?: React
 
 const Field: React.FC<{ label: string; children?: React.ReactNode }> = ({ label, children }) => (
   <div className="flex flex-col gap-1">
-    <label className="ml-0.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-slate-400 dark:text-slate-500">
+    <label className="ff-muted-text ml-0.5 text-[9px] font-semibold uppercase tracking-[0.08em]">
       {label}
     </label>
     {children}
@@ -97,14 +97,14 @@ const Field: React.FC<{ label: string; children?: React.ReactNode }> = ({ label,
 const Input: React.FC<React.InputHTMLAttributes<HTMLInputElement>> = (props) => (
   <input
     {...props}
-    className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-medium outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+    className="ff-input ff-focus w-full px-3 py-2 text-xs font-medium outline-none"
   />
 );
 
 const Select: React.FC<React.SelectHTMLAttributes<HTMLSelectElement>> = (props) => (
   <select
     {...props}
-    className="w-full cursor-pointer appearance-none rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-medium outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+    className="ff-input ff-focus w-full cursor-pointer appearance-none px-3 py-2 text-xs font-medium outline-none"
   >
     {props.children}
   </select>
@@ -117,10 +117,10 @@ const DetailToggle: React.FC<{
 }> = ({ isActive, label, onClick }) => (
   <button
     onClick={onClick}
-    className={`rounded-md px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] transition-colors ${
+    className={`ff-focus rounded-md px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] transition-colors ${
       isActive
-        ? 'bg-blue-600 text-white'
-        : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700'
+        ? 'bg-[var(--color-accent-1)] text-white shadow-sm'
+        : 'text-[var(--color-text-tertiary)] hover:bg-[color:var(--color-surface-3)]'
     }`}
   >
     {label}
@@ -269,9 +269,9 @@ const Inspector: React.FC<InspectorProps> = ({
 
   if (!selectedNode && !selectedEdge) {
     return (
-      <div className="flex h-full flex-col items-center justify-center p-8 text-center opacity-40">
-        <MousePointer2 className="mb-4 h-12 w-12 text-slate-300" />
-        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+      <div className="ff-muted-text flex h-full flex-col items-center justify-center p-8 text-center opacity-70">
+        <MousePointer2 className="mb-4 h-12 w-12" />
+        <p className="text-xs font-semibold uppercase tracking-[0.14em]">
           Select an object to inspect properties
         </p>
       </div>
@@ -279,23 +279,17 @@ const Inspector: React.FC<InspectorProps> = ({
   }
 
   return (
-    <div
-      className={`flex h-full flex-col ${
-        isDarkMode
-          ? 'bg-slate-900'
-          : 'bg-white'
-      }`}
-    >
-      <div className={`flex items-center justify-between border-b px-4 py-4 ${isDarkMode ? 'border-slate-700' : 'border-slate-300'}`}>
+    <div className="ff-panel flex h-full flex-col border-0 bg-transparent shadow-none">
+      <div className="ff-soft-divider flex items-center justify-between border-b px-4 py-4">
         <div className="flex items-center gap-2">
-          <div className="h-2 w-2 rounded-full bg-blue-500" />
-          <h2 className="text-xs font-semibold uppercase tracking-[0.14em] dark:text-slate-200">
+          <div className="h-2 w-2 rounded-full bg-[var(--color-accent-1)]" />
+          <h2 className="text-xs font-semibold uppercase tracking-[0.14em]">
             {selectedNode ? 'Entity Profile' : 'Link Logic'}
           </h2>
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="flex items-center rounded-md border border-slate-300 bg-slate-50 p-0.5 dark:border-slate-700 dark:bg-slate-800">
+          <div className="ff-panel-muted flex items-center p-0.5">
             <DetailToggle
               isActive={detailLevel === 'basic'}
               label="Basic"
@@ -307,7 +301,7 @@ const Inspector: React.FC<InspectorProps> = ({
               onClick={() => setDetailLevel('advanced')}
             />
           </div>
-          <button onClick={onClose} className="rounded-md p-1.5 transition-colors hover:bg-slate-100 dark:hover:bg-slate-700">
+          <button onClick={onClose} className="ff-btn-ghost ff-focus p-1.5">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -360,13 +354,13 @@ const Inspector: React.FC<InspectorProps> = ({
                 ))}
               </Select>
             </Field>
-            <Field label="Entity Notes">
-              <textarea
-                {...nodeForm.register('description')}
-                className="h-24 w-full resize-none rounded-md border border-slate-300 bg-white p-3 text-xs outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
-                placeholder="Optional notes for this entity..."
-              />
-            </Field>
+              <Field label="Entity Notes">
+                <textarea
+                  {...nodeForm.register('description')}
+                  className="ff-input ff-focus h-24 w-full resize-none p-3 text-xs outline-none"
+                  placeholder="Optional notes for this entity..."
+                />
+              </Field>
           </Section>
         )}
 
@@ -436,10 +430,10 @@ const Inspector: React.FC<InspectorProps> = ({
                       shouldValidate: true
                     })
                   }
-                  className={`rounded-md border px-3 py-2 text-[10px] font-semibold uppercase transition-all ${
+                  className={`ff-focus rounded-md border px-3 py-2 text-[10px] font-semibold uppercase transition-all ${
                     edgeIsFX
                       ? 'border-emerald-600 bg-emerald-500 text-white shadow-md'
-                      : 'border-slate-300 bg-slate-50 text-slate-500 dark:border-slate-700 dark:bg-slate-800'
+                      : 'ff-btn-secondary'
                   }`}
                 >
                   Foreign Exchange (FX)
@@ -451,10 +445,10 @@ const Inspector: React.FC<InspectorProps> = ({
                       shouldValidate: true
                     })
                   }
-                  className={`rounded-md border px-3 py-2 text-[10px] font-semibold uppercase transition-all ${
+                  className={`ff-focus rounded-md border px-3 py-2 text-[10px] font-semibold uppercase transition-all ${
                     edgeIsExceptionPath
                       ? 'bg-rose-500 border-rose-600 text-white shadow-md'
-                      : 'border-slate-300 bg-slate-50 text-slate-500 dark:border-slate-700 dark:bg-slate-800'
+                      : 'ff-btn-secondary'
                   }`}
                 >
                   Exception / Return Path
@@ -486,7 +480,7 @@ const Inspector: React.FC<InspectorProps> = ({
               <Field label="Architect Notes">
                 <textarea
                   {...edgeForm.register('description')}
-                  className="h-24 w-full resize-none rounded-md border border-slate-300 bg-white p-3 text-xs outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                  className="ff-input ff-focus h-24 w-full resize-none p-3 text-xs outline-none"
                   placeholder="Explain cut-offs, retries, dependencies..."
                 />
               </Field>
