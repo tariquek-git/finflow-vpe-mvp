@@ -1,18 +1,15 @@
-# Local Release Handoff (v0.2.2)
+# Local Release Handoff (v0.2.3)
 
 ## Release Identity
-- Release branch of record: `codex/uiux-v022-mvp-polish`
+- Release branch of record: `codex/v0.2.3-svg-export`
 - Local remote source of truth: `/Users/tarique/Documents/banking-diagram-mvp-origin.git`
-- Release tag of record: `v0.2.2`
-- Release type: Local-first MVP UI de-clutter + public-ready polish
+- Release tag of record: `v0.2.3`
+- Release type: Local patch release for SVG export workflow
 
-## Engineering Rules
-- Karpathy guidelines remain enforced at repo level via:
-  - `.cursor/rules/karpathy-guidelines.md`
-- QA/review checks for each change set:
-  - assumptions are explicit,
-  - implementation remains minimal/surgical,
-  - success criteria are verifiable in test output.
+## Isolation Notes
+- Baseline `main` was reset to `v0.2.2` before patch validation.
+- SVG scope shipped from `codex/v0.2.3-svg-export` only.
+- Separate non-release work preserved on `codex/wip-flowcanvas-perf`.
 
 ## Gate Evidence
 All commands passed with exit code `0`:
@@ -29,19 +26,9 @@ All commands passed with exit code `0`:
 - Accessibility suite: pass (3/3)
 
 ## Public Contract Safety
-- No changes to schema or payload contracts (`nodes`, `edges`, `drawings`, layout persistence format).
-- No breaking changes to import/export behavior.
-
-## Deliverables
-- QA summary docs:
-  - `docs/mvp-qa-report.md`
-  - `docs/CHANGELOG_v0.2.2-local.md`
-- Review artifacts (generated during release cut):
-  - `/Users/tarique/Downloads/banking-diagram-mvp_v0.2.2_handoff_20260213-132726.tar.gz`
-  - `/Users/tarique/Downloads/banking-diagram-mvp_v0.2.2_handoff_20260213-132726.zip`
+- No changes to schema or payload contracts (`nodes`, `edges`, `drawings`, `layout`).
+- No import/export JSON compatibility changes.
 
 ## Notes
-- View controls are centralized in Inspector `Canvas` tab to reduce duplicated command surfaces.
-- Topbar and bottom bar now separate global actions from status-only controls.
-- Existing QA-critical labels and test IDs remain preserved.
-- Release decision: GO for local MVP promotion path.
+- Export menu now includes SVG along with JSON/PNG/PDF.
+- Existing QA-critical labels/test IDs remain preserved.
