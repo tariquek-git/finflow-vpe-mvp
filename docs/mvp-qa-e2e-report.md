@@ -1,6 +1,6 @@
 # MVP E2E QA Report
 
-Date: 2026-02-12
+Date: 2026-02-13
 
 ## Results
 
@@ -17,10 +17,10 @@ Date: 2026-02-12
 - B3 LocalStorage restore on reload: PASS - nodes=2
 - B4 New resets graph and UI defaults: PASS
 - C1C2C3 PNG/PDF export toggles and output: PASS
-- D1D2D3 75-node import and auto-layout: PASS - autoLayoutClickToStable~695ms
+- D1D2D3 75-node import and auto-layout: PASS - autoLayoutClickToStable~565ms
 
 ## Summary
 
 - Passed: 14
 - Failed: 0
-- Artifacts: `qa-artifacts/2026-02-12T21-51-03-063Z`
+- Artifacts: `qa-artifacts/2026-02-13T02-38-28-574Z`
