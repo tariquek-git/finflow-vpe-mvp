@@ -13,8 +13,8 @@
 - [x] Verify `v0.2.3` exists on origin
 
 ## Local Deliverable Freeze
-- [ ] Generate `/Users/tarique/Downloads/banking-diagram-mvp_v0.2.3_handoff_<timestamp>.tar.gz`
-- [ ] Generate `/Users/tarique/Downloads/banking-diagram-mvp_v0.2.3_handoff_<timestamp>.zip`
+- [x] Generate `/Users/tarique/Downloads/banking-diagram-mvp_v0.2.3_handoff_20260213-140430.tar.gz`
+- [x] Generate `/Users/tarique/Downloads/banking-diagram-mvp_v0.2.3_handoff_20260213-140430.zip`
 
 ## Optional Public Promotion (post local signoff)
 - [ ] Deploy rebased `main` to hosted target

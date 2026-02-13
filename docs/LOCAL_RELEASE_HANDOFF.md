@@ -25,6 +25,10 @@ All commands passed with exit code `0`:
 - Acceptance suite: pass (10/10)
 - Accessibility suite: pass (3/3)
 
+## Deliverables
+- `/Users/tarique/Downloads/banking-diagram-mvp_v0.2.3_handoff_20260213-140430.tar.gz`
+- `/Users/tarique/Downloads/banking-diagram-mvp_v0.2.3_handoff_20260213-140430.zip`
+
 ## Public Contract Safety
 - No changes to schema or payload contracts (`nodes`, `edges`, `drawings`, `layout`).
 - No import/export JSON compatibility changes.
