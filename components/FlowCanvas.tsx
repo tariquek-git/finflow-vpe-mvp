@@ -17,7 +17,9 @@ import MiniMapPanel from './canvas/MiniMapPanel';
 import NodeContextToolbar from './canvas/NodeContextToolbar';
 import { GRID_SIZE, MAX_ZOOM, MIN_ZOOM } from './canvas/canvasConstants';
 import {
+  SWIMLANE_HEADER_HEIGHT,
   SWIMLANE_HEIGHT,
+  SWIMLANE_PADDING_Y,
   getClosestPortToPoint,
   getNodeHandlePortConfig,
   getNodeDimensions,
@@ -35,6 +37,10 @@ interface FlowCanvasProps {
   onUpdateNodePosition: (id: string, pos: Position) => void;
   onBeginNodeMove: (ids: string[]) => void;
   onConnect: (sourceId: string, targetId: string, spIdx: number, tpIdx: number) => void;
+  onReconnectEdge: (
+    edgeId: string,
+    next: { sourceId: string; sourcePortIdx: number; targetId: string; targetPortIdx: number }
+  ) => void;
   onAddNode: (type: EntityType, pos?: Position) => void;
   isDarkMode: boolean;
   showPorts: boolean;
@@ -54,6 +60,15 @@ interface FlowCanvasProps {
   isQuickAttributePinned: boolean;
   showSwimlanes: boolean;
   swimlaneLabels: string[];
+  swimlaneCollapsedIds: number[];
+  swimlaneLockedIds: number[];
+  swimlaneHiddenIds: number[];
+  selectedSwimlaneId: number | null;
+  onSelectSwimlane: (laneId: number | null) => void;
+  onRenameSwimlane: (laneId: number) => void;
+  onToggleSwimlaneCollapsed: (laneId: number) => void;
+  onToggleSwimlaneLocked: (laneId: number) => void;
+  onToggleSwimlaneHidden: (laneId: number) => void;
   gridMode: 'none' | 'lines' | 'dots';
   overlayMode: OverlayMode;
   showMinimap: boolean;
@@ -92,6 +107,14 @@ type PendingConnectionResolution = {
   edgeToCreate?: { sourceId: string; targetId: string; sourcePortIdx: number; targetPortIdx: number };
 };
 type PortRole = 'source' | 'target' | 'both';
+type ConnectSessionState = 'idle' | 'armed' | 'dragging' | 'chain';
+type ReconnectEndpoint = 'source' | 'target';
+type ReconnectSession = {
+  edgeId: string;
+  endpoint: ReconnectEndpoint;
+  anchorNodeId: string;
+  anchorPortIdx: number;
+};
 
 const parsePortHandleRef = (value: string): { nodeId: string; portIdx: number } | null => {
   const match = /^node-port-(.+)-([0-9]+)$/.exec(value);
@@ -109,6 +132,13 @@ const isEditableTarget = (target: EventTarget | null): target is HTMLElement => 
   if (target.isContentEditable) return true;
   const tagName = target.tagName;
   return tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT';
+};
+
+const isInteractiveCanvasTarget = (target: EventTarget | null) => {
+  if (!(target instanceof Element)) return false;
+  return !!target.closest(
+    '[data-canvas-interactive="true"], [data-node-id], [data-edge-id], button, input, textarea, select, a, summary'
+  );
 };
 
 const resolvePendingConnectionFromNodeClick = (
@@ -168,6 +198,7 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
   onUpdateNodePosition,
   onBeginNodeMove,
   onConnect,
+  onReconnectEdge,
   onAddNode,
   isDarkMode,
   showPorts,
@@ -187,6 +218,15 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
   isQuickAttributePinned,
   showSwimlanes,
   swimlaneLabels,
+  swimlaneCollapsedIds,
+  swimlaneLockedIds,
+  swimlaneHiddenIds,
+  selectedSwimlaneId,
+  onSelectSwimlane,
+  onRenameSwimlane,
+  onToggleSwimlaneCollapsed,
+  onToggleSwimlaneLocked,
+  onToggleSwimlaneHidden,
   gridMode,
   overlayMode,
   showMinimap,
@@ -211,6 +251,8 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const [pointerWorld, setPointerWorld] = useState<Position | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [activeReconnect, setActiveReconnect] = useState<ReconnectSession | null>(null);
+  const [hoverConnectionTarget, setHoverConnectionTarget] = useState<PendingConnection | null>(null);
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   const [lodState, setLodState] = useState<LodState>(() => ({
     compactNodes: viewport.zoom < 0.35,
@@ -222,13 +264,32 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const contextMenuRef = useRef<HTMLDivElement | null>(null);
   const viewportRef = useRef(viewport);
+  const pendingConnectionRef = useRef<PendingConnection | null>(null);
+  const isPortDragActiveRef = useRef(false);
+  const activeReconnectRef = useRef<ReconnectSession | null>(null);
   const pointerMoveRafRef = useRef<number | null>(null);
   const pendingPointerRef = useRef<{ clientX: number; clientY: number; altKey: boolean } | null>(null);
   const lastPointerClientRef = useRef<{ x: number; y: number } | null>(null);
+  const isSpacePressedRef = useRef(false);
 
   useEffect(() => {
     viewportRef.current = viewport;
   }, [viewport]);
+
+  const updatePendingConnection = useCallback((next: PendingConnection | null) => {
+    pendingConnectionRef.current = next;
+    setPendingConnection(next);
+  }, []);
+
+  const updatePortDragActive = useCallback((next: boolean) => {
+    isPortDragActiveRef.current = next;
+    setIsPortDragActive(next);
+  }, []);
+
+  const updateReconnectSession = useCallback((next: ReconnectSession | null) => {
+    activeReconnectRef.current = next;
+    setActiveReconnect(next);
+  }, []);
 
   useEffect(() => {
     const zoom = viewport.zoom;
@@ -290,52 +351,130 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
     return map;
   }, [nodes]);
 
+  const selectedNodeSet = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds]);
+  const laneCount = Math.max(1, swimlaneLabels.length);
+  const collapsedLaneSet = useMemo(() => new Set(swimlaneCollapsedIds), [swimlaneCollapsedIds]);
+  const hiddenLaneSet = useMemo(() => new Set(swimlaneHiddenIds), [swimlaneHiddenIds]);
+  const lockedLaneSet = useMemo(() => new Set(swimlaneLockedIds), [swimlaneLockedIds]);
+  const nonRenderableLaneSet = useMemo(
+    () => new Set([...collapsedLaneSet, ...hiddenLaneSet]),
+    [collapsedLaneSet, hiddenLaneSet]
+  );
+
+  const getNodeLaneId = useCallback(
+    (node: Node) => {
+      if (typeof node.swimlaneId === 'number' && Number.isFinite(node.swimlaneId)) {
+        return clamp(Math.floor(node.swimlaneId), 1, laneCount);
+      }
+      return clamp(Math.floor(Math.max(0, node.position.y) / SWIMLANE_HEIGHT) + 1, 1, laneCount);
+    },
+    [laneCount]
+  );
+
+  const isNodeInteractionLocked = useCallback(
+    (node: Node | null | undefined) => {
+      if (!node) return false;
+      return !!node.data?.isLocked || lockedLaneSet.has(getNodeLaneId(node));
+    },
+    [getNodeLaneId, lockedLaneSet]
+  );
+
   const resolveDropConnectionTarget = useCallback(
-    (clientX: number, clientY: number, source: PendingConnection): PendingConnection | null => {
+    (
+      clientX: number,
+      clientY: number,
+      source: PendingConnection,
+      requiredRole: 'source' | 'target'
+    ): PendingConnection | null => {
       if (typeof document === 'undefined') return null;
       const sourceNode = nodeById.get(source.nodeId);
       if (!sourceNode) return null;
 
       const sourcePortPosition = getPortPosition(sourceNode, source.portIdx);
       const targetElement = document.elementFromPoint(clientX, clientY);
-      if (!(targetElement instanceof HTMLElement)) return null;
+      const resolveNodeTarget = (targetNode: Node): PendingConnection => {
+        const { sourcePorts, targetPorts } = getNodeHandlePortConfig(targetNode);
+        const allowedPorts = requiredRole === 'source' ? sourcePorts : targetPorts;
+        const targetPortIdx = getClosestPortToPoint(targetNode, sourcePortPosition, allowedPorts);
+        return {
+          nodeId: targetNode.id,
+          portIdx: targetPortIdx
+        };
+      };
 
-      const handleElement = targetElement.closest('[data-testid^="node-port-"]') as HTMLElement | null;
+      const handleElement = targetElement?.closest('[data-testid^="node-port-"]') as HTMLElement | null;
       if (handleElement) {
         const handleRef = parsePortHandleRef(
           handleElement.dataset.testid || handleElement.getAttribute('data-testid') || ''
         );
         const role = handleElement.getAttribute('data-port-role');
-        const isTargetHandle = role === 'target' || role === 'both';
+        const isTargetHandle =
+          requiredRole === 'target' ? role === 'target' || role === 'both' : role === 'source' || role === 'both';
         if (
           handleRef &&
           isTargetHandle &&
           handleRef.nodeId !== source.nodeId &&
-          !nodeById.get(handleRef.nodeId)?.data?.isLocked
-        ) {
-          return {
-            nodeId: handleRef.nodeId,
-            portIdx: handleRef.portIdx
-          };
+          !isNodeInteractionLocked(nodeById.get(handleRef.nodeId))
+          ) {
+          return { nodeId: handleRef.nodeId, portIdx: handleRef.portIdx };
         }
       }
 
-      const nodeElement = targetElement.closest('[data-node-id]') as HTMLElement | null;
+      const nodeElement = targetElement?.closest('[data-node-id]') as HTMLElement | null;
       const targetNodeId = nodeElement?.getAttribute('data-node-id');
-      if (!targetNodeId || targetNodeId === source.nodeId) return null;
-      const targetNode = nodeById.get(targetNodeId);
-      if (!targetNode || targetNode.data?.isLocked) return null;
-      const { targetPorts } = getNodeHandlePortConfig(targetNode);
-      const targetPortIdx = getClosestPortToPoint(targetNode, sourcePortPosition, targetPorts);
-      return {
-        nodeId: targetNodeId,
-        portIdx: targetPortIdx
-      };
-    },
-    [nodeById]
-  );
+      if (targetNodeId && targetNodeId !== source.nodeId) {
+        const targetNode = nodeById.get(targetNodeId);
+        if (targetNode && !isNodeInteractionLocked(targetNode)) {
+          return resolveNodeTarget(targetNode);
+        }
+      }
 
-  const selectedNodeSet = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds]);
+      const worldPoint = screenToWorld(clientX, clientY);
+      const worldThreshold = Math.max(14, 18 / Math.max(viewportRef.current.zoom, 0.01));
+      const worldThresholdSq = worldThreshold * worldThreshold;
+      let nearestNode: Node | null = null;
+      let nearestDistance = Number.POSITIVE_INFINITY;
+
+      for (const candidate of nodes) {
+        if (candidate.id === source.nodeId) continue;
+        if (isNodeInteractionLocked(candidate)) continue;
+        const { sourcePorts, targetPorts } = getNodeHandlePortConfig(candidate);
+        const allowedPorts = requiredRole === 'source' ? sourcePorts : targetPorts;
+        for (const portIdx of allowedPorts) {
+          const portPosition = getPortPosition(candidate, portIdx);
+          const distance =
+            (portPosition.x - worldPoint.x) * (portPosition.x - worldPoint.x) +
+            (portPosition.y - worldPoint.y) * (portPosition.y - worldPoint.y);
+          if (distance <= worldThresholdSq && distance < nearestDistance) {
+            nearestDistance = distance;
+            nearestNode = candidate;
+          }
+        }
+      }
+
+      if (nearestNode) {
+        return resolveNodeTarget(nearestNode);
+      }
+
+      const fallbackPadding = Math.max(18, 24 / Math.max(viewportRef.current.zoom, 0.01));
+      for (const candidate of nodes) {
+        if (candidate.id === source.nodeId) continue;
+        if (isNodeInteractionLocked(candidate)) continue;
+        const { width, height } = getNodeDimensions(candidate);
+        const inBounds =
+          worldPoint.x >= candidate.position.x - fallbackPadding &&
+          worldPoint.x <= candidate.position.x + width + fallbackPadding &&
+          worldPoint.y >= candidate.position.y - fallbackPadding &&
+          worldPoint.y <= candidate.position.y + height + fallbackPadding;
+        if (inBounds) {
+          return resolveNodeTarget(candidate);
+        }
+      }
+
+      return null;
+    },
+    [isNodeInteractionLocked, nodeById, nodes, screenToWorld]
+  );
 
   const edgeOffsetMeta = useMemo(() => {
     const groups = new Map<string, string[]>();
@@ -372,8 +511,18 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
   }, [selectedEdgeId, edges, nodeById]);
 
   const presentableNodes = useMemo(
-    () => nodes.filter((node) => !node.isConnectorHandle || activeConnectorHandleIds.includes(node.id)),
-    [nodes, activeConnectorHandleIds]
+    () =>
+      nodes.filter((node) => {
+        if (node.isConnectorHandle && !activeConnectorHandleIds.includes(node.id)) {
+          return false;
+        }
+        const laneId = getNodeLaneId(node);
+        if (showSwimlanes && nonRenderableLaneSet.has(laneId)) {
+          return false;
+        }
+        return true;
+      }),
+    [activeConnectorHandleIds, getNodeLaneId, nodes, nonRenderableLaneSet, showSwimlanes]
   );
 
   const worldViewportBounds = useMemo(() => {
@@ -431,15 +580,22 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
   const renderedEdges = useMemo(
     () =>
       edges.filter((edge) => {
-        if (selectedEdgeId === edge.id) return true;
         const sourceNode = nodeById.get(edge.sourceId);
         const targetNode = nodeById.get(edge.targetId);
+        if (
+          showSwimlanes &&
+          ((sourceNode && nonRenderableLaneSet.has(getNodeLaneId(sourceNode))) ||
+            (targetNode && nonRenderableLaneSet.has(getNodeLaneId(targetNode))))
+        ) {
+          return false;
+        }
+        if (selectedEdgeId === edge.id) return true;
         if (sourceNode?.isConnectorHandle || targetNode?.isConnectorHandle) {
           return true;
         }
         return visibleNodeIds.has(edge.sourceId) || visibleNodeIds.has(edge.targetId);
       }),
-    [edges, nodeById, selectedEdgeId, visibleNodeIds]
+    [edges, getNodeLaneId, nodeById, nonRenderableLaneSet, selectedEdgeId, showSwimlanes, visibleNodeIds]
   );
 
   const selectedConnectedEdgeIds = useMemo(() => {
@@ -459,10 +615,19 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
     () => (pendingConnection ? nodeById.get(pendingConnection.nodeId) || null : null),
     [nodeById, pendingConnection]
   );
+  const canConnectFromPorts = activeTool === 'draw' || activeTool === 'select';
+  const connectSession: ConnectSessionState = isPortDragActive
+    ? 'dragging'
+    : pendingConnection
+      ? activeTool === 'draw'
+        ? 'chain'
+        : 'armed'
+      : 'idle';
 
   const startPanning = useCallback((clientX: number, clientY: number) => {
     setContextMenu(null);
-    setPendingConnection(null);
+    updateReconnectSession(null);
+    updatePendingConnection(null);
     setDraggingNodes(null);
     setHasRecordedDragHistory(false);
     setSelectionMarquee(null);
@@ -473,7 +638,7 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
       baseX: viewportRef.current.x,
       baseY: viewportRef.current.y
     });
-  }, []);
+  }, [updatePendingConnection, updateReconnectSession]);
 
   const closeContextMenu = useCallback(() => {
     setContextMenu(null);
@@ -603,9 +768,31 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
     [onViewportChange]
   );
 
+  const handleCanvasMouseDownCapture = useCallback(
+    (event: React.MouseEvent) => {
+      if (event.button !== 0) return;
+      if (isSpacePressedRef.current || isSpacePressed) {
+        event.preventDefault();
+        startPanning(event.clientX, event.clientY);
+        return;
+      }
+      if (isPortDragActiveRef.current || activeReconnectRef.current) return;
+      if (event.shiftKey && activeTool === 'select') return;
+      if (isInteractiveCanvasTarget(event.target)) return;
+      onSelectSwimlane(null);
+      onSelectNodes([]);
+      onSelectEdge(null);
+    },
+    [activeTool, isSpacePressed, onSelectEdge, onSelectNodes, onSelectSwimlane, startPanning]
+  );
+
   const handleCanvasMouseDown = (event: React.MouseEvent) => {
+    if (isPortDragActiveRef.current || activeReconnectRef.current) {
+      return;
+    }
+
     const isMiddleMouse = event.button === 1;
-    const isSpacePanGesture = event.button === 0 && isSpacePressed;
+    const isSpacePanGesture = event.button === 0 && (isSpacePressedRef.current || isSpacePressed);
     const isHandPanGesture = event.button === 0 && activeTool === 'hand';
 
     if (isMiddleMouse || isSpacePanGesture || isHandPanGesture) {
@@ -636,8 +823,8 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
 
     if (activeTool === 'draw') {
       if (clickedNode) {
-        if (clickedNode.data?.isLocked) {
-          setPendingConnection(null);
+        if (isNodeInteractionLocked(clickedNode)) {
+          updatePendingConnection(null);
           return;
         }
         const resolution = resolvePendingConnectionFromNodeClick(
@@ -656,13 +843,49 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
           );
         }
 
-        setPendingConnection(resolution.nextPending);
+        updatePendingConnection(resolution.nextPending);
         return;
       }
 
       if (pendingConnection) {
-        setPendingConnection(null);
+        updateReconnectSession(null);
+        updatePendingConnection(null);
       }
+      return;
+    }
+
+    if (activeTool === 'select' && pendingConnection) {
+      if (clickedNode) {
+        if (isNodeInteractionLocked(clickedNode)) {
+          updatePendingConnection(null);
+          return;
+        }
+
+        const resolution = resolvePendingConnectionFromNodeClick(
+          nodes,
+          pendingConnection,
+          clickedNode.id,
+          worldPos
+        );
+
+        if (resolution.edgeToCreate) {
+          onConnect(
+            resolution.edgeToCreate.sourceId,
+            resolution.edgeToCreate.targetId,
+            resolution.edgeToCreate.sourcePortIdx,
+            resolution.edgeToCreate.targetPortIdx
+          );
+        }
+
+        updatePendingConnection(resolution.nextPending);
+        return;
+      }
+
+      updateReconnectSession(null);
+      updatePendingConnection(null);
+      onSelectSwimlane(null);
+      onSelectNodes([]);
+      onSelectEdge(null);
       return;
     }
 
@@ -673,18 +896,22 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
         current: worldPos,
         baseSelection
       });
-      setPendingConnection(null);
+      updateReconnectSession(null);
+      updatePendingConnection(null);
       setDraggingNodes(null);
       setSnapGuide({ x: null, y: null });
 
       if (!event.shiftKey) {
+        onSelectSwimlane(null);
         onSelectNodes([]);
         onSelectEdge(null);
       }
       return;
     }
 
-    setPendingConnection(null);
+    updateReconnectSession(null);
+    updatePendingConnection(null);
+    onSelectSwimlane(null);
     onSelectNodes([]);
     onSelectEdge(null);
   };
@@ -707,12 +934,13 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
   const startConnectFromNode = useCallback(
     (nodeId: string) => {
       const sourceNode = nodeById.get(nodeId);
-      if (!sourceNode || sourceNode.data?.isLocked) return;
+      if (!sourceNode || isNodeInteractionLocked(sourceNode)) return;
       const { sourcePorts } = getNodeHandlePortConfig(sourceNode);
       const sourcePortIdx = sourcePorts[0] ?? 1;
       const armConnection = () => {
-        setPendingConnection({ nodeId: sourceNode.id, portIdx: sourcePortIdx });
-        setIsPortDragActive(false);
+        updatePendingConnection({ nodeId: sourceNode.id, portIdx: sourcePortIdx });
+        updatePortDragActive(false);
+        updateReconnectSession(null);
       };
       if (activeTool !== 'draw') {
         onActivateConnectTool();
@@ -721,7 +949,7 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
       }
       armConnection();
     },
-    [activeTool, nodeById, onActivateConnectTool]
+    [activeTool, nodeById, onActivateConnectTool, updatePendingConnection, updatePortDragActive, updateReconnectSession]
   );
 
   const handleCanvasContextMenu = useCallback(
@@ -764,6 +992,20 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
       const worldPos = screenToWorld(clientX, clientY);
       setPointerWorld(worldPos);
       onPointerWorldChange?.(worldPos);
+
+      const pending = pendingConnectionRef.current;
+      if (isPortDragActiveRef.current && pending) {
+        const reconnectSession = activeReconnectRef.current;
+        const requiredRole = reconnectSession?.endpoint === 'source' ? 'source' : 'target';
+        const dropTarget = resolveDropConnectionTarget(clientX, clientY, pending, requiredRole);
+        const nextTarget =
+          dropTarget && dropTarget.nodeId !== pending.nodeId ? { nodeId: dropTarget.nodeId, portIdx: dropTarget.portIdx } : null;
+        setHoverConnectionTarget((prev) =>
+          prev?.nodeId === nextTarget?.nodeId && prev?.portIdx === nextTarget?.portIdx ? prev : nextTarget
+        );
+      } else {
+        setHoverConnectionTarget((prev) => (prev ? null : prev));
+      }
 
       if (panningState) {
         const deltaX = clientX - panningState.startX;
@@ -857,17 +1099,18 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
       onViewportChange,
       panningState,
       presentableNodes,
+      resolveDropConnectionTarget,
       screenToWorld,
       selectionMarquee,
       snapToGrid
     ]
   );
 
-  const handleMouseMove = (event: React.MouseEvent) => {
+  const queuePointerMove = useCallback((clientX: number, clientY: number, altKey: boolean) => {
     pendingPointerRef.current = {
-      clientX: event.clientX,
-      clientY: event.clientY,
-      altKey: event.altKey
+      clientX,
+      clientY,
+      altKey
     };
 
     if (pointerMoveRafRef.current !== null) return;
@@ -878,30 +1121,64 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
       if (!pending) return;
       processMouseMove(pending.clientX, pending.clientY, pending.altKey);
     });
+  }, [processMouseMove]);
+
+  const handleMouseMove = (event: React.MouseEvent) => {
+    queuePointerMove(event.clientX, event.clientY, event.altKey);
   };
 
-  const handleMouseUp = (event?: React.MouseEvent) => {
+  const handlePointerMove = (event: React.PointerEvent) => {
+    if (!isPortDragActiveRef.current) return;
+    queuePointerMove(event.clientX, event.clientY, event.altKey);
+  };
+
+  const handleMouseUp = (event?: { clientX: number; clientY: number }) => {
     if (event) {
       lastPointerClientRef.current = { x: event.clientX, y: event.clientY };
     }
 
-    if (isPortDragActive && pendingConnection) {
+    const pending = pendingConnectionRef.current;
+    const portDragging = isPortDragActiveRef.current;
+    const reconnectSession = activeReconnectRef.current;
+
+    if (portDragging && pending) {
       const dropPoint = event
         ? { x: event.clientX, y: event.clientY }
         : lastPointerClientRef.current;
       if (dropPoint) {
-        const dropTarget = resolveDropConnectionTarget(dropPoint.x, dropPoint.y, pendingConnection);
-        if (dropTarget && dropTarget.nodeId !== pendingConnection.nodeId) {
-          onConnect(
-            pendingConnection.nodeId,
-            dropTarget.nodeId,
-            pendingConnection.portIdx,
-            dropTarget.portIdx
-          );
+        const requiredRole = reconnectSession?.endpoint === 'source' ? 'source' : 'target';
+        const dropTarget = resolveDropConnectionTarget(dropPoint.x, dropPoint.y, pending, requiredRole);
+        if (dropTarget && dropTarget.nodeId !== pending.nodeId) {
+          if (reconnectSession) {
+            if (reconnectSession.endpoint === 'target') {
+              onReconnectEdge(reconnectSession.edgeId, {
+                sourceId: reconnectSession.anchorNodeId,
+                sourcePortIdx: reconnectSession.anchorPortIdx,
+                targetId: dropTarget.nodeId,
+                targetPortIdx: dropTarget.portIdx
+              });
+            } else {
+              onReconnectEdge(reconnectSession.edgeId, {
+                sourceId: dropTarget.nodeId,
+                sourcePortIdx: dropTarget.portIdx,
+                targetId: reconnectSession.anchorNodeId,
+                targetPortIdx: reconnectSession.anchorPortIdx
+              });
+            }
+          } else {
+            onConnect(
+              pending.nodeId,
+              dropTarget.nodeId,
+              pending.portIdx,
+              dropTarget.portIdx
+            );
+          }
         }
       }
-      setIsPortDragActive(false);
-      setPendingConnection(null);
+      updatePortDragActive(false);
+      updateReconnectSession(null);
+      updatePendingConnection(null);
+      setHoverConnectionTarget(null);
     }
 
     if (pointerMoveRafRef.current !== null) {
@@ -915,11 +1192,12 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
         const node = nodeById.get(id);
         if (!node || node.type === EntityType.ANCHOR) continue;
 
-        const laneCount = Math.max(1, swimlaneLabels.length);
-        const laneIndex = clamp(Math.floor(Math.max(0, node.position.y) / SWIMLANE_HEIGHT), 0, laneCount - 1);
-        const laneTop = laneIndex * SWIMLANE_HEIGHT + 20;
-        const laneBottom = (laneIndex + 1) * SWIMLANE_HEIGHT - 84;
-        const nextY = clamp(node.position.y, laneTop, laneBottom);
+        const { height } = getNodeDimensions(node);
+        const laneIndex = getNodeLaneId(node) - 1;
+        const laneTop = laneIndex * SWIMLANE_HEIGHT + SWIMLANE_HEADER_HEIGHT + SWIMLANE_PADDING_Y;
+        const laneBottom = (laneIndex + 1) * SWIMLANE_HEIGHT - height - SWIMLANE_PADDING_Y;
+        const laneMax = Math.max(laneTop, laneBottom);
+        const nextY = clamp(node.position.y, laneTop, laneMax);
 
         if (Math.abs(nextY - node.position.y) > 0.1) {
           onUpdateNodePosition(id, {
@@ -936,58 +1214,73 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
     setSnapGuide({ x: null, y: null });
     setPanningState(null);
     setPointerWorld(null);
+    setHoverConnectionTarget(null);
     onPointerWorldChange?.(null);
+  };
+
+  const handlePointerUp = (event: React.PointerEvent) => {
+    if (!isPortDragActiveRef.current) return;
+    handleMouseUp({ clientX: event.clientX, clientY: event.clientY });
   };
 
   const handlePortClick = useCallback(
     (nodeId: string, portIdx: number, role: PortRole) => {
-      const canUseConnect = activeTool === 'draw' || pendingConnection !== null;
+      const canUseConnect = canConnectFromPorts || pendingConnection !== null;
       if (!canUseConnect) return;
-      if (nodeById.get(nodeId)?.data?.isLocked) return;
+      if (isNodeInteractionLocked(nodeById.get(nodeId))) return;
       const canStartConnection = role === 'source' || role === 'both';
       const canCompleteConnection = role === 'target' || role === 'both';
 
       if (!pendingConnection) {
-        if (activeTool !== 'draw') return;
         if (!canStartConnection) return;
-        setPendingConnection({ nodeId, portIdx });
+        updatePendingConnection({ nodeId, portIdx });
         return;
       }
 
-      if (nodeById.get(pendingConnection.nodeId)?.data?.isLocked) {
-        setPendingConnection(null);
+      if (isNodeInteractionLocked(nodeById.get(pendingConnection.nodeId))) {
+        updateReconnectSession(null);
+        updatePendingConnection(null);
         return;
       }
 
       if (pendingConnection.nodeId === nodeId) {
         if (canStartConnection) {
-          setPendingConnection({ nodeId, portIdx });
+          updatePendingConnection({ nodeId, portIdx });
           return;
         }
-        setPendingConnection(null);
+        updateReconnectSession(null);
+        updatePendingConnection(null);
         return;
       }
 
       if (canCompleteConnection) {
         onConnect(pendingConnection.nodeId, nodeId, pendingConnection.portIdx, portIdx);
-        setIsPortDragActive(false);
-        setPendingConnection(null);
+        updatePortDragActive(false);
+        updateReconnectSession(null);
+        updatePendingConnection(null);
         return;
       }
 
       if (canStartConnection) {
-        setPendingConnection({ nodeId, portIdx });
+        updatePendingConnection({ nodeId, portIdx });
       }
     },
-    [activeTool, nodeById, onConnect, pendingConnection]
+    [
+      canConnectFromPorts,
+      nodeById,
+      onConnect,
+      pendingConnection,
+      updatePendingConnection,
+      updatePortDragActive,
+      updateReconnectSession
+    ]
   );
 
   const handleNodeConnectClick = useCallback(
     (event: React.MouseEvent, nodeId: string) => {
-      const canUseConnect = activeTool === 'draw' || pendingConnection !== null;
+      const canUseConnect = canConnectFromPorts || pendingConnection !== null;
       if (!canUseConnect) return;
-      if (nodeById.get(nodeId)?.data?.isLocked) return;
-      if (!pendingConnection && activeTool !== 'draw') return;
+      if (isNodeInteractionLocked(nodeById.get(nodeId))) return;
       const world = screenToWorld(event.clientX, event.clientY);
       const resolution = resolvePendingConnectionFromNodeClick(nodes, pendingConnection, nodeId, world);
 
@@ -1000,45 +1293,66 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
         );
       }
 
-      setPendingConnection(resolution.nextPending);
+      updatePendingConnection(resolution.nextPending);
     },
-    [activeTool, nodeById, nodes, onConnect, pendingConnection, screenToWorld]
+    [canConnectFromPorts, nodeById, nodes, onConnect, pendingConnection, screenToWorld, updatePendingConnection]
   );
 
   useEffect(() => {
-    if (activeTool !== 'draw' && pendingConnection) {
-      setPendingConnection(null);
+    if ((activeTool === 'hand' || activeTool === 'text') && pendingConnection) {
+      updateReconnectSession(null);
+      updatePendingConnection(null);
     }
-  }, [activeTool, pendingConnection]);
+  }, [activeTool, pendingConnection, updatePendingConnection, updateReconnectSession]);
+
+  useEffect(() => {
+    if (!pendingConnection) {
+      setHoverConnectionTarget(null);
+    }
+  }, [pendingConnection]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.code === 'Space' || event.key === ' ') {
         if (isEditableTarget(event.target)) return;
         event.preventDefault();
+        isSpacePressedRef.current = true;
         setIsSpacePressed(true);
       }
 
       if (event.key === 'Escape') {
-        setPendingConnection(null);
+        updatePortDragActive(false);
+        updateReconnectSession(null);
+        setDraggingNodes(null);
+        setHasRecordedDragHistory(false);
+        updatePendingConnection(null);
         setSelectionMarquee(null);
       }
     };
 
     const handleKeyUp = (event: KeyboardEvent) => {
       if (event.code === 'Space' || event.key === ' ') {
+        isSpacePressedRef.current = false;
         setIsSpacePressed(false);
       }
     };
 
+    const handleWindowBlur = () => {
+      isSpacePressedRef.current = false;
+      setIsSpacePressed(false);
+    };
+
     window.addEventListener('keydown', handleKeyDown, { passive: false });
     window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleWindowBlur);
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleWindowBlur);
+      isSpacePressedRef.current = false;
     };
-  }, []);
+  }, [updatePendingConnection, updatePortDragActive, updateReconnectSession]);
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -1114,11 +1428,12 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
 
   const handleNodeMouseDown = useCallback(
     (event: React.MouseEvent, id: string) => {
-      if (event.button !== 0 || isSpacePressed) return;
+      if (event.button !== 0 || isSpacePressedRef.current || isSpacePressed) return;
       event.stopPropagation();
       closeContextMenu();
+      onSelectSwimlane(null);
       const clickedNode = nodeById.get(id);
-      const isLockedNode = !!clickedNode?.data?.isLocked;
+      const isLockedNode = isNodeInteractionLocked(clickedNode);
 
       if (activeTool === 'hand') {
         startPanning(event.clientX, event.clientY);
@@ -1127,14 +1442,16 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
 
       if (activeTool === 'draw') {
         if (isLockedNode) {
-          setPendingConnection(null);
+          updatePendingConnection(null);
           return;
         }
         handleNodeConnectClick(event, id);
         return;
       }
 
-      if (activeTool !== 'select') return;
+      const shouldTreatAsSelect =
+        activeTool === 'select' || (activeTool === 'text' && clickedNode?.type === EntityType.TEXT_BOX);
+      if (!shouldTreatAsSelect) return;
 
       if (event.shiftKey) {
         if (selectedNodeSet.has(id)) {
@@ -1157,7 +1474,7 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
         return;
       }
 
-      const movableIds = dragIds.filter((nodeId) => !nodeById.get(nodeId)?.data?.isLocked);
+      const movableIds = dragIds.filter((nodeId) => !isNodeInteractionLocked(nodeById.get(nodeId)));
       if (movableIds.length === 0) {
         setDraggingNodes(null);
         return;
@@ -1183,10 +1500,12 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
       closeContextMenu,
       handleNodeConnectClick,
       isSpacePressed,
+      isNodeInteractionLocked,
       nodeById,
       onOpenInspector,
       onSelectEdge,
       onSelectNodes,
+      onSelectSwimlane,
       screenToWorld,
       startPanning,
       selectedNodeIds,
@@ -1213,19 +1532,62 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
   );
 
   const handleNodePortMouseDown = useCallback(
-    (event: React.MouseEvent, id: string, portIdx: number, role: PortRole) => {
+    (event: React.PointerEvent, id: string, portIdx: number, role: PortRole) => {
       event.stopPropagation();
-      if (activeTool !== 'draw') return;
+      if (!canConnectFromPorts) return;
       if (role !== 'source' && role !== 'both') return;
-      if (nodeById.get(id)?.data?.isLocked) return;
+      if (isNodeInteractionLocked(nodeById.get(id))) return;
       const world = screenToWorld(event.clientX, event.clientY);
-      setPendingConnection({ nodeId: id, portIdx });
-      setIsPortDragActive(true);
+      updateReconnectSession(null);
+      updatePendingConnection({ nodeId: id, portIdx });
+      updatePortDragActive(true);
       lastPointerClientRef.current = { x: event.clientX, y: event.clientY };
       setPointerWorld(world);
       onPointerWorldChange?.(world);
     },
-    [activeTool, nodeById, onPointerWorldChange, screenToWorld]
+    [
+      canConnectFromPorts,
+      isNodeInteractionLocked,
+      nodeById,
+      onPointerWorldChange,
+      screenToWorld,
+      updatePendingConnection,
+      updatePortDragActive,
+      updateReconnectSession
+    ]
+  );
+
+  const handleEdgeReconnectPointerDown = useCallback(
+    (edgeId: string, endpoint: ReconnectEndpoint, clientPoint: { x: number; y: number }) => {
+      if (activeTool === 'hand') return;
+      const edge = edges.find((candidate) => candidate.id === edgeId);
+      if (!edge) return;
+      const anchorNodeId = endpoint === 'source' ? edge.targetId : edge.sourceId;
+      const anchorPortIdx = endpoint === 'source' ? edge.targetPortIdx : edge.sourcePortIdx;
+      const world = screenToWorld(clientPoint.x, clientPoint.y);
+      updateReconnectSession({
+        edgeId,
+        endpoint,
+        anchorNodeId,
+        anchorPortIdx
+      });
+      updatePendingConnection({ nodeId: anchorNodeId, portIdx: anchorPortIdx });
+      updatePortDragActive(true);
+      lastPointerClientRef.current = { x: clientPoint.x, y: clientPoint.y };
+      setPointerWorld(world);
+      onPointerWorldChange?.(world);
+      onSelectEdge(edgeId);
+    },
+    [
+      activeTool,
+      edges,
+      onPointerWorldChange,
+      onSelectEdge,
+      screenToWorld,
+      updatePendingConnection,
+      updatePortDragActive,
+      updateReconnectSession
+    ]
   );
 
   const selectionRect = selectionMarquee
@@ -1285,10 +1647,13 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
           ? 'radial-gradient(1100px circle at 14% 0%, rgba(79,70,229,0.12) 0%, transparent 56%), var(--ff-surface-canvas)'
           : 'radial-gradient(900px circle at 12% 0%, rgba(79,70,229,0.08) 0%, transparent 54%), var(--ff-surface-canvas)'
       }}
+      onMouseDownCapture={handleCanvasMouseDownCapture}
       onMouseDown={handleCanvasMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
       onContextMenu={handleCanvasContextMenu}
       onWheel={handleWheel}
     >
@@ -1302,12 +1667,21 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
       >
         <svg className="absolute left-0 top-0 h-full w-full overflow-visible">
           <CanvasOverlays
-            nodes={presentableNodes}
+            nodes={nodes}
             edges={edges}
             isDarkMode={isDarkMode}
             gridMode={gridMode}
             showSwimlanes={showSwimlanes}
             swimlaneLabels={swimlaneLabels}
+            swimlaneCollapsedIds={swimlaneCollapsedIds}
+            swimlaneLockedIds={swimlaneLockedIds}
+            swimlaneHiddenIds={swimlaneHiddenIds}
+            selectedSwimlaneId={selectedSwimlaneId}
+            onSelectSwimlane={onSelectSwimlane}
+            onRenameSwimlane={onRenameSwimlane}
+            onToggleSwimlaneCollapsed={onToggleSwimlaneCollapsed}
+            onToggleSwimlaneLocked={onToggleSwimlaneLocked}
+            onToggleSwimlaneHidden={onToggleSwimlaneHidden}
             snapGuide={snapGuide}
             overlayMode={overlayMode}
           />
@@ -1342,13 +1716,16 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
                 isDarkMode={isDarkMode}
                 showLabelAtZoom={lodState.showEdgeLabels}
                 onSelect={handleEdgeSelect}
+                zoom={viewport.zoom}
+                onStartReconnect={handleEdgeReconnectPointerDown}
+                isReconnectActive={activeReconnect?.edgeId === edge.id}
                 offsetIndex={offsetMeta.offsetIndex}
                 totalEdges={offsetMeta.totalEdges}
               />
             );
           })}
 
-          {activeTool === 'draw' && pendingConnection && pointerWorld
+          {pendingConnection && pointerWorld
             ? (() => {
                 const sourceNode = nodeById.get(pendingConnection.nodeId);
                 if (!sourceNode) return null;
@@ -1390,22 +1767,23 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
             isDarkMode={isDarkMode}
             pinnedAttributes={pinnedNodeAttributes}
             showPorts={showPorts}
-            isConnectToolActive={activeTool === 'draw'}
+            isConnectMode={activeTool === 'draw'}
+            canConnectFromPorts={canConnectFromPorts}
             connectState={
-              activeTool === 'draw'
-                ? pendingConnection?.nodeId === node.id
-                  ? 'source'
-                  : pendingConnection
-                    ? 'candidate'
-                    : 'idle'
-                : 'idle'
+              pendingConnection?.nodeId === node.id
+                ? 'source'
+                : pendingConnection && hoverConnectionTarget?.nodeId === node.id
+                  ? 'candidate'
+                  : 'idle'
             }
-            isConnecting={activeTool === 'draw'}
+            candidatePortIdx={hoverConnectionTarget?.nodeId === node.id ? hoverConnectionTarget.portIdx : undefined}
+            isConnecting={connectSession !== 'idle'}
             onMouseDown={handleNodeMouseDown}
             onClick={handleNodeClick}
             onContextMenu={handleNodeContextMenu}
             onPortMouseDown={handleNodePortMouseDown}
             onPortClick={handleNodePortClick}
+            zoom={viewport.zoom}
           />
         ))}
       </div>
@@ -1434,6 +1812,7 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
       {contextMenu ? (
         <div
           ref={contextMenuRef}
+          data-canvas-interactive="true"
           data-testid={contextMenu.kind === 'node' ? 'node-context-menu' : 'canvas-context-menu'}
           className="menu-panel absolute z-[85] min-w-[11rem]"
           style={{ left: contextMenu.left, top: contextMenu.top }}
@@ -1555,10 +1934,10 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
         />
       ) : null}
 
-      {activeTool === 'draw' ? (
-        <div className="ff-mode-chip" role="status" aria-live="polite">
+      {activeTool === 'draw' || connectSession !== 'idle' ? (
+        <div className="ff-mode-chip" role="status" aria-live="polite" data-canvas-interactive="true">
           <span className="h-1.5 w-1.5 rounded-full bg-cyan-500" />
-          <strong>Connect</strong>
+          <strong>{activeTool === 'draw' ? 'Connect' : 'Link'}</strong>
           {pendingConnection ? (
             <>
               <span className="truncate">
@@ -1571,7 +1950,7 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
                 onMouseDown={(evt) => evt.stopPropagation()}
                 onClick={(evt) => {
                   evt.stopPropagation();
-                  setPendingConnection(null);
+                  updatePendingConnection(null);
                 }}
                 aria-label="Cancel pending connection"
                 title="Cancel pending connection"
@@ -1580,7 +1959,11 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
               </button>
             </>
           ) : (
-            <span className="opacity-90">Drag handle or source then target · Esc</span>
+            <span className="opacity-90">
+              {activeTool === 'draw'
+                ? 'Drag handle or source then target · Esc'
+                : 'Hover a node and drag from a handle to connect'}
+            </span>
           )}
         </div>
       ) : null}
