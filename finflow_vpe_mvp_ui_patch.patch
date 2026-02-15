@@ -1,0 +1,701 @@
+# FinFlow MVP UI Patch
+# Generated 2026-02-15T00:01:46.349805Z
+
+--- a/components/ui/cn.ts
++++ b/components/ui/cn.ts
+@@ -0,0 +1,3 @@
++export function cn(...classes: Array<string | false | null | undefined>) {
++  return classes.filter(Boolean).join(' ');
++}
+
+--- a/components/ui/Button.tsx
++++ b/components/ui/Button.tsx
+@@ -0,0 +1,39 @@
++import React from 'react';
++import { cn } from './cn';
++
++type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
++type Size = 'sm' | 'md';
++
++export function Button(
++  props: React.ButtonHTMLAttributes<HTMLButtonElement> & {
++    variant?: Variant;
++    size?: Size;
++  }
++) {
++  const { className, variant = 'secondary', size = 'md', ...rest } = props;
++
++  const base =
++    'inline-flex items-center justify-center rounded-lg font-medium transition ' +
++    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/30 ' +
++    'disabled:opacity-50 disabled:pointer-events-none';
++
++  const sizes: Record<Size, string> = {
++    sm: 'h-8 px-3 text-xs',
++    md: 'h-9 px-3.5 text-sm'
++  };
++
++  const variants: Record<Variant, string> = {
++    primary:
++      'bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200',
++    secondary:
++      'bg-slate-100 text-slate-900 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700',
++    ghost:
++      'bg-transparent text-slate-900 hover:bg-slate-100 dark:text-slate-100 dark:hover:bg-slate-800',
++    danger:
++      'bg-rose-600 text-white hover:bg-rose-500 dark:bg-rose-600 dark:hover:bg-rose-500'
++  };
++
++  return (
++    <button className={cn(base, sizes[size], variants[variant], className)} {...rest} />
++  );
++}
+
+--- a/components/ui/Chip.tsx
++++ b/components/ui/Chip.tsx
+@@ -0,0 +1,23 @@
++import React from 'react';
++import { cn } from './cn';
++
++export function Chip(
++  props: React.HTMLAttributes<HTMLSpanElement> & {
++    tone?: 'default' | 'good' | 'warn';
++  }
++) {
++  const { className, tone = 'default', ...rest } = props;
++
++  const tones: Record<string, string> = {
++    default: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200',
++    good: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200',
++    warn: 'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200'
++  };
++
++  return (
++    <span
++      className={cn('inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium', tones[tone], className)}
++      {...rest}
++    />
++  );
++}
+
+--- a/components/ui/Menu.tsx
++++ b/components/ui/Menu.tsx
+@@ -0,0 +1,95 @@
++import React, { useEffect, useMemo, useRef, useState } from 'react';
++import { cn } from './cn';
++
++type Item =
++  | { type?: 'item'; label: string; onSelect: () => void; disabled?: boolean }
++  | { type: 'sep' }
++  | { type: 'title'; label: string };
++
++export function Menu(props: {
++  trigger: React.ReactNode;
++  items: Item[];
++  align?: 'left' | 'right';
++  className?: string;
++}) {
++  const { trigger, items, align = 'right', className } = props;
++  const [open, setOpen] = useState(false);
++  const rootRef = useRef<HTMLDivElement | null>(null);
++
++  const positionClass = align === 'right' ? 'right-0' : 'left-0';
++
++  useEffect(() => {
++    function onDown(e: MouseEvent) {
++      if (!rootRef.current) return;
++      if (!rootRef.current.contains(e.target as Node)) setOpen(false);
++    }
++    function onKey(e: KeyboardEvent) {
++      if (e.key === 'Escape') setOpen(false);
++    }
++    document.addEventListener('mousedown', onDown);
++    document.addEventListener('keydown', onKey);
++    return () => {
++      document.removeEventListener('mousedown', onDown);
++      document.removeEventListener('keydown', onKey);
++    };
++  }, []);
++
++  const rendered = useMemo(
++    () =>
++      items.map((it, idx) => {
++        if (it.type === 'sep')
++          return <div key={idx} className="my-1 h-px bg-slate-200 dark:bg-slate-700" />;
++        if (it.type === 'title')
++          return (
++            <div key={idx} className="px-2 py-1 text-[11px] font-semibold text-slate-500">
++              {it.label}
++            </div>
++          );
++        return (
++          <button
++            key={idx}
++            className={cn(
++              'w-full rounded-md px-2 py-1.5 text-left text-sm transition',
++              'hover:bg-slate-100 dark:hover:bg-slate-800',
++              it.disabled ? 'opacity-50 pointer-events-none' : ''
++            )}
++            onClick={() => {
++              it.onSelect();
++              setOpen(false);
++            }}
++          >
++            {it.label}
++          </button>
++        );
++      }),
++    [items]
++  );
++
++  return (
++    <div ref={rootRef} className={cn('relative inline-flex', className)}>
++      <span
++        onClick={() => setOpen((v) => !v)}
++        className="inline-flex"
++        role="button"
++        tabIndex={0}
++        onKeyDown={(e) => {
++          if (e.key === 'Enter' || e.key === ' ') setOpen((v) => !v);
++        }}
++      >
++        {trigger}
++      </span>
++
++      {open ? (
++        <div
++          className={cn(
++            'absolute z-50 mt-2 min-w-[240px] rounded-xl border border-slate-200 bg-white p-1 shadow-lg',
++            'dark:border-slate-800 dark:bg-slate-900',
++            positionClass
++          )}
++        >
++          {rendered}
++        </div>
++      ) : null}
++    </div>
++  );
++}
+
+--- a/components/layout/TopBar.tsx
++++ b/components/layout/TopBar.tsx
+@@ -2,22 +2,20 @@
+ import {
+   AlertTriangle,
+   Bot,
+-  ChevronDown,
+-  Download,
+-  FileImage,
+-  FileText,
+   HelpCircle,
+   Import,
+   LayoutPanelLeft,
+   Moon,
+   RotateCcw,
+   RotateCw,
+-  Rows3,
+   Settings2,
+   Sun,
+   ZoomIn,
+   ZoomOut
+ } from 'lucide-react';
++import { Button } from '../ui/Button';
++import { Chip } from '../ui/Chip';
++import { Menu } from '../ui/Menu';
+ 
+ type TopBarProps = {
+   isDarkMode: boolean;
+@@ -53,13 +51,6 @@
+   onExportPdf: () => void;
+ };
+ 
+-const actionButton = (isDarkMode: boolean) =>
+-  `tap-target shrink-0 whitespace-nowrap inline-flex h-9 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-semibold transition-colors ${
+-    isDarkMode
+-      ? 'border-slate-700 bg-slate-900/85 text-slate-200 hover:bg-slate-800'
+-      : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
+-  }`;
+-
+ const TopBar: React.FC<TopBarProps> = ({
+   isDarkMode,
+   nodesCount,
+@@ -93,304 +84,143 @@
+   onExportPng,
+   onExportPdf
+ }) => {
++  const exportItems = [
++    { type: 'title' as const, label: 'Export' },
++    { label: 'Export JSON', onSelect: onExportDiagram },
++    { label: 'Export SVG', onSelect: onExportSvg },
++    { label: 'Export PNG', onSelect: onExportPng },
++    { label: 'Export PDF', onSelect: onExportPdf }
++  ];
++
++  const moreItems = [
++    { type: 'title' as const, label: 'Workspace' },
++    {
++      label: hasRecoverySnapshot ? 'Restore recovery snapshot' : 'No recovery snapshot',
++      onSelect: onRestoreRecovery,
++      disabled: !hasRecoverySnapshot
++    },
++    { label: 'Import JSON', onSelect: onImportDiagram },
++    { type: 'sep' as const },
++    { label: 'Canvas controls', onSelect: onOpenCanvasControls },
++    { label: 'Reset canvas', onSelect: onResetCanvas },
++    { type: 'sep' as const },
++    { type: 'title' as const, label: 'Support' },
++    { label: 'Help', onSelect: onOpenHelp },
++    {
++      label: 'Feedback',
++      onSelect: () => window.open(feedbackHref, '_blank', 'noopener,noreferrer')
++    }
++  ];
++
++  const aiItems = [
++    { type: 'title' as const, label: 'AI' },
++    {
++      label: isAIEnabled ? 'Open AI launcher' : 'AI disabled for MVP',
++      onSelect: onOpenAiLauncher,
++      disabled: !isAIEnabled || isAILoading
++    }
++  ];
++
+   return (
+-    <header
+-      className={`ff-topbar glass-panel z-50 mx-2 mt-2 flex shrink-0 flex-col gap-2 rounded-2xl border px-3 py-2.5 md:mx-3 md:px-4 ${
+-        isDarkMode ? 'border-slate-700 bg-slate-950/88' : 'border-slate-200 bg-white/88'
+-      }`}
+-    >
+-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+-        <div className="flex min-w-0 items-center gap-2.5">
+-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-slate-800 to-cyan-600 text-sm font-bold text-white shadow-[0_8px_20px_rgba(15,23,42,0.22)]">
+-            FF
++    <div className="sticky top-0 z-40 border-b border-slate-200 bg-white/80 backdrop-blur dark:border-slate-800 dark:bg-slate-950/70">
++      <div className="flex items-center justify-between px-3 py-2">
++        <div className="flex items-center gap-3">
++          <div className="flex items-center gap-2">
++            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-900 text-white dark:bg-white dark:text-slate-900">
++              FF
++            </div>
++            <div className="leading-tight">
++              <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
++                Flow of Funds Studio
++              </div>
++              <div className="text-xs text-slate-500">
++                {nodesCount} nodes • {edgesCount} edges
++              </div>
++            </div>
+           </div>
+-          <div className="min-w-0">
+-            <h1 className="truncate text-sm font-semibold tracking-tight">Flow of Funds Studio</h1>
+-            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+-              Fintech Diagram Workspace
+-            </p>
++
++          <div className="hidden items-center gap-2 md:flex">
++            <Chip tone={storageWarning ? 'warn' : 'good'}>{storageWarning ? 'Autosave issue' : backupStatusText}</Chip>
++            {!isAIEnabled ? <Chip>AI off</Chip> : null}
+           </div>
+-          <span
+-            className={`mono hidden shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold xl:inline-flex ${
+-              isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'
+-            }`}
+-          >
+-            {nodesCount} nodes • {edgesCount} edges
+-          </span>
+-        </div>
+-
+-        <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
+-          <button
+-            type="button"
+-            onClick={onToggleSidebar}
+-            aria-pressed={isSidebarOpen}
+-            className={`${actionButton(isDarkMode)} lg:hidden`}
+-          >
+-            <LayoutPanelLeft className="h-3.5 w-3.5" />
+-            {isSidebarOpen ? 'Hide Library' : 'Library'}
+-          </button>
+-
+-          <button
+-            type="button"
+-            onClick={onToggleInspector}
+-            aria-pressed={isInspectorOpen}
+-            className={`${actionButton(isDarkMode)} lg:hidden`}
+-          >
+-            <Rows3 className="h-3.5 w-3.5" />
+-            {isInspectorOpen ? 'Hide Inspect' : 'Inspect'}
+-          </button>
+-
+-          <div className="flex shrink-0 items-center gap-1 rounded-xl border border-slate-200/80 p-1 dark:border-slate-700/80">
+-            <button
+-              type="button"
+-              title="Undo"
+-              aria-label="Undo"
+-              onClick={onUndo}
+-              disabled={!canUndo}
+-              className={actionButton(isDarkMode)}
+-            >
+-              <RotateCcw className="h-3.5 w-3.5" />
+-            </button>
+-            <button
+-              type="button"
+-              title="Redo"
+-              aria-label="Redo"
+-              onClick={onRedo}
+-              disabled={!canRedo}
+-              className={actionButton(isDarkMode)}
+-            >
+-              <RotateCw className="h-3.5 w-3.5" />
+-            </button>
+-          </div>
+-
+-          <button
+-            type="button"
+-            onClick={onToggleTheme}
+-            className={actionButton(isDarkMode)}
+-            title={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+-            aria-label={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+-          >
+-            {isDarkMode ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
+-            <span className="hidden xl:inline">{isDarkMode ? 'Light' : 'Dark'}</span>
+-          </button>
+-
+-          <button
+-            type="button"
+-            onClick={onZoomOut}
+-            className={actionButton(isDarkMode)}
+-            title="Zoom out"
+-            aria-label="Zoom out"
+-          >
+-            <ZoomOut className="h-3.5 w-3.5" />
+-          </button>
+-
+-          <button
+-            type="button"
+-            onClick={onZoomIn}
+-            className={actionButton(isDarkMode)}
+-            title="Zoom in"
+-            aria-label="Zoom in"
+-          >
+-            <ZoomIn className="h-3.5 w-3.5" />
+-          </button>
+-
+-          <button
+-            type="button"
+-            onClick={onOpenCanvasControls}
+-            className={actionButton(isDarkMode)}
+-            title="Open layout controls"
+-            aria-label="Open layout controls"
+-          >
+-            <Settings2 className="h-3.5 w-3.5" />
+-            <span className="hidden xl:inline">Canvas</span>
+-          </button>
+-
+-          <details className="relative shrink-0">
+-            <summary
+-              className={`${actionButton(isDarkMode)} list-none cursor-pointer`}
+-              title="System status"
+-              aria-label="System status"
+-            >
+-              <span className="hidden xl:inline">System</span>
+-              <span
+-                data-testid="backup-status-indicator"
+-                data-last-saved-at={recoveryLastSavedAt || ''}
+-                className={`rounded-full px-2 py-0.5 ${
+-                  hasRecoverySnapshot
+-                    ? isDarkMode
+-                      ? 'bg-emerald-500/20 text-emerald-200'
+-                      : 'bg-emerald-100 text-emerald-700'
+-                    : isDarkMode
+-                      ? 'bg-amber-500/20 text-amber-200'
+-                      : 'bg-amber-100 text-amber-700'
+-                }`}
+-              >
+-                {backupStatusText}
+-              </span>
+-              {!isAIEnabled ? (
+-                <span
+-                  data-testid="ai-disabled-badge"
+-                  className={`rounded-full border px-2 py-0.5 ${
+-                    isDarkMode
+-                      ? 'border-slate-700 bg-slate-900 text-slate-300'
+-                      : 'border-slate-300 bg-white text-slate-600'
+-                  }`}
+-                >
+-                  AI off
+-                </span>
+-              ) : null}
+-              <ChevronDown className="h-3.5 w-3.5 opacity-80" />
+-            </summary>
+-            <div
+-              className={`absolute right-0 z-40 mt-1.5 flex min-w-[14rem] flex-col gap-1.5 rounded-xl border p-2 shadow-xl ${
+-                isDarkMode ? 'border-slate-700 bg-slate-900' : 'border-slate-200 bg-white'
+-              }`}
+-            >
+-              {!isAIEnabled ? (
+-                <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-300">AI disabled for MVP</div>
+-              ) : null}
+-              {storageWarning ? (
+-                <span
+-                  role="status"
+-                  className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+-                    isDarkMode ? 'bg-amber-500/15 text-amber-200' : 'bg-amber-100 text-amber-700'
+-                  }`}
+-                  title={storageWarning}
+-                >
+-                  <AlertTriangle className="h-3 w-3" /> Autosave issue
+-                </span>
+-              ) : null}
+-              <a
+-                href={feedbackHref}
+-                target="_blank"
+-                rel="noreferrer"
+-                className={`inline-flex w-fit rounded-full px-2 py-0.5 text-[10px] font-semibold transition-colors ${
+-                  isDarkMode
+-                    ? 'bg-cyan-500/20 text-cyan-200 hover:bg-cyan-500/30'
+-                    : 'bg-cyan-100 text-cyan-700 hover:bg-cyan-200'
+-                }`}
+-              >
+-                Feedback
+-              </a>
+-            </div>
+-          </details>
+-
+-          <button
+-            type="button"
+-            data-testid="toolbar-help-open"
+-            onClick={onOpenHelp}
+-            className={actionButton(isDarkMode)}
+-            title="Open quick start help ( ? )"
+-            aria-label="Open quick start help"
+-          >
+-            <HelpCircle className="h-3.5 w-3.5" />
+-            <span className="hidden xl:inline">Help</span>
+-          </button>
++        </div>
++
++        <div className="flex items-center gap-2">
++          <Button size="sm" variant="ghost" onClick={onToggleSidebar} title="Toggle library">
++            <LayoutPanelLeft size={16} className="mr-1 opacity-80" />
++            {isSidebarOpen ? 'Library on' : 'Library off'}
++          </Button>
++
++          <Button size="sm" variant="ghost" onClick={onToggleInspector} title="Toggle inspector">
++            <Settings2 size={16} className="mr-1 opacity-80" />
++            {isInspectorOpen ? 'Inspect on' : 'Inspect off'}
++          </Button>
++
++          <Button size="sm" variant="ghost" onClick={onUndo} disabled={!canUndo} title="Undo">
++            <RotateCcw size={16} className="mr-1 opacity-80" />
++            Undo
++          </Button>
++
++          <Button size="sm" variant="ghost" onClick={onRedo} disabled={!canRedo} title="Redo">
++            <RotateCw size={16} className="mr-1 opacity-80" />
++            Redo
++          </Button>
++
++          <Button size="sm" variant="ghost" onClick={onZoomOut} title="Zoom out">
++            <ZoomOut size={16} className="mr-1 opacity-80" />
++            Zoom
++          </Button>
++
++          <Button size="sm" variant="ghost" onClick={onZoomIn} title="Zoom in">
++            <ZoomIn size={16} className="opacity-80" />
++          </Button>
++
++          <Menu
++            align="right"
++            trigger={
++              <Button size="sm" variant="secondary">
++                Export
++              </Button>
++            }
++            items={exportItems}
++          />
++
++          <Button size="sm" variant="ghost" onClick={onToggleTheme} title="Toggle theme">
++            {isDarkMode ? <Sun size={16} className="mr-1 opacity-80" /> : <Moon size={16} className="mr-1 opacity-80" />}
++            {isDarkMode ? 'Light' : 'Dark'}
++          </Button>
++
++          <Menu
++            align="right"
++            trigger={
++              <Button size="sm" variant="secondary">
++                More
++              </Button>
++            }
++            items={[...aiItems, { type: 'sep' as const }, ...moreItems]}
++          />
+         </div>
+       </div>
+ 
+-      <div className="flex items-center justify-end">
+-        <div
+-          className="flex w-full items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar lg:w-auto lg:justify-end lg:overflow-visible"
+-          data-testid="primary-actions-strip"
+-        >
+-          <span className="ui-section-title shrink-0 px-1">Primary Actions</span>
+-
+-          <button
+-            type="button"
+-            data-testid="toolbar-restore"
+-            onClick={onRestoreRecovery}
+-            className={actionButton(isDarkMode)}
+-            title="Restore backup"
+-          >
+-            <RotateCcw className="h-3.5 w-3.5" />
+-            Restore Backup
+-          </button>
+-
+-          <button
+-            type="button"
+-            data-testid="toolbar-reset-canvas"
+-            onClick={onResetCanvas}
+-            className="tap-target shrink-0 whitespace-nowrap inline-flex h-9 items-center gap-1.5 rounded-lg border border-rose-300 bg-rose-50 px-2.5 text-[11px] font-semibold text-rose-700 transition-colors hover:bg-rose-100 dark:border-rose-500/40 dark:bg-rose-500/20 dark:text-rose-100 dark:hover:bg-rose-500/30"
+-            title="Reset canvas"
+-          >
+-            Reset
+-          </button>
+-
+-          <button
+-            type="button"
+-            data-testid="toolbar-import-json"
+-            onClick={onImportDiagram}
+-            className={actionButton(isDarkMode)}
+-            title="Import JSON"
+-          >
+-            <Import className="h-3.5 w-3.5" />
+-            Import JSON
+-          </button>
+-
+-          <button
+-            type="button"
+-            data-testid="toolbar-export-json"
+-            onClick={onExportDiagram}
+-            className="ui-button-primary tap-target shrink-0 whitespace-nowrap inline-flex h-9 items-center gap-1.5 px-2.5 text-[11px] font-semibold"
+-            title="Export JSON"
+-          >
+-            <Download className="h-3.5 w-3.5" />
+-            Export JSON
+-          </button>
+-
+-          <details className="relative shrink-0">
+-            <summary className={`${actionButton(isDarkMode)} list-none cursor-pointer`} title="Export options">
+-              <Download className="h-3.5 w-3.5" />
+-              More
+-            </summary>
+-            <div
+-              className={`absolute right-0 z-40 mt-1.5 flex min-w-[11rem] flex-col gap-1 rounded-xl border p-1.5 shadow-xl ${
+-                isDarkMode ? 'border-slate-700 bg-slate-900' : 'border-slate-200 bg-white'
+-              }`}
+-            >
+-              <button
+-                type="button"
+-                data-testid="toolbar-export-svg"
+-                onClick={onExportSvg}
+-                className="ui-button-secondary inline-flex items-center gap-1.5 px-2.5 py-2 text-[11px] font-semibold"
+-              >
+-                <Download className="h-3.5 w-3.5" /> Export SVG
+-              </button>
+-              <button
+-                type="button"
+-                data-testid="toolbar-export-png"
+-                onClick={onExportPng}
+-                className="ui-button-secondary inline-flex items-center gap-1.5 px-2.5 py-2 text-[11px] font-semibold"
+-              >
+-                <FileImage className="h-3.5 w-3.5" /> Export PNG
+-              </button>
+-              <button
+-                type="button"
+-                data-testid="toolbar-export-pdf"
+-                onClick={onExportPdf}
+-                className="ui-button-secondary inline-flex items-center gap-1.5 px-2.5 py-2 text-[11px] font-semibold"
+-              >
+-                <FileText className="h-3.5 w-3.5" /> Export PDF
+-              </button>
+-            </div>
+-          </details>
+-
+-          {isAIEnabled ? (
+-            <button
+-              type="button"
+-              data-testid="toolbar-open-ai-launcher"
+-              onClick={onOpenAiLauncher}
+-              className={`${actionButton(isDarkMode)} ${isAILoading ? 'animate-pulse' : ''}`}
+-              title="Open AI flow generator"
+-            >
+-              <Bot className="h-3.5 w-3.5" />
+-              AI
+-            </button>
+-          ) : null}
+-        </div>
+-      </div>
+-    </header>
++      {hasRecoverySnapshot && recoveryLastSavedAt ? (
++        <div className="px-3 pb-2 text-xs text-slate-500">
++          Recovery saved {recoveryLastSavedAt}
++        </div>
++      ) : null}
++
++      {!isAIEnabled ? (
++        <div className="px-3 pb-2 text-xs text-slate-500">
++          AI disabled for MVP
++        </div>
++      ) : null}
++
++      {storageWarning ? (
++        <div className="px-3 pb-2 text-xs text-amber-700 dark:text-amber-200">
++          <AlertTriangle size={14} className="mr-1 inline-block align-[-2px]" />
++          {storageWarning}
++        </div>
++      ) : null}
++    </div>
+   );
+ };
+ 
+
+--- a/components/Sidebar.tsx
++++ b/components/Sidebar.tsx
+@@ -213,10 +213,11 @@
+               <input
+                 value={query}
+                 onChange={(event) => setQuery(event.target.value)}
+-                placeholder="Search node types..."
+-                className={`ui-input h-8 w-full pl-8 pr-2 text-xs outline-none transition-all focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 ${
+-                  isDarkMode ? 'placeholder:text-slate-500' : 'placeholder:text-slate-400'
+-                }`}
++                placeholder="Search nodes, accounts, rails..."
++                className={`h-9 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-2 text-sm outline-none transition
++                  focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20
++                  dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100
++                  ${isDarkMode ? 'placeholder:text-slate-500' : 'placeholder:text-slate-400'}`}
+               />
+             </div>
+ 
+
+--- a/APPLY_INSTRUCTIONS.md
++++ b/APPLY_INSTRUCTIONS.md
+@@ -0,0 +1,21 @@
++# FinFlow MVP UI Patch
++
++This patch adds a small UI kit and refactors TopBar and Sidebar to a cleaner modern layout.
++
++## Files included
++- components/ui/cn.ts (new)
++- components/ui/Button.tsx (new)
++- components/ui/Chip.tsx (new)
++- components/ui/Menu.tsx (new)
++- components/layout/TopBar.tsx (updated)
++- components/Sidebar.tsx (updated)
++
++## How to apply (manual)
++1. Copy the files into your repo, preserving paths.
++2. Run `npm install` (no new deps).
++3. Run `npm run dev`
++4. Run `npm run test:smoke` and `npm run test:mvp`
++
++## Notes
++- TopBar keeps the same props contract and remains a default export.
++- Sidebar search input styling is updated and the placeholder is more product oriented.
