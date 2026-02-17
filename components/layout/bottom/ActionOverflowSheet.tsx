@@ -1,55 +1,45 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowRight, ArrowRightLeft, Copy, Divide, Minus, MoreHorizontal, Trash2, X } from 'lucide-react';
+import {
+  AlignCenterVertical,
+  AlignEndVertical,
+  AlignHorizontalDistributeCenter,
+  AlignStartVertical,
+  Copy,
+  Trash2,
+  X
+} from 'lucide-react';
 
 type ActionOverflowSheetProps = {
   isOpen: boolean;
   selectedNodeCount: number;
-  hasSelectedEdge: boolean;
-  activeEdgeStyle: 'solid' | 'dashed' | 'dotted';
-  arrowHeadEnabled: boolean;
-  midArrowEnabled: boolean;
   onClose: () => void;
   onDelete: () => void;
   onDuplicateSelection: () => void;
+  onRenameSelection: () => void;
+  onToggleQuickAttribute: () => void;
+  isQuickAttributePinned: boolean;
   onAlignLeft: () => void;
   onAlignCenter: () => void;
   onAlignRight: () => void;
   onDistribute: () => void;
-  onSetEdgeStyle: (style: 'solid' | 'dashed' | 'dotted') => void;
-  onToggleArrowHead: () => void;
-  onToggleMidArrow: () => void;
 };
 
 const overflowButtonClass = (isActive = false) => `ff-overflow-btn${isActive ? ' is-active' : ''}`;
 const EXIT_DURATION_MS = 180;
 
-const edgeStyleOptions: Array<{
-  id: 'solid' | 'dashed' | 'dotted';
-  icon: React.ReactNode;
-  title: string;
-}> = [
-  { id: 'solid', icon: <Minus className="h-4 w-4" />, title: 'solid line style' },
-  { id: 'dashed', icon: <Divide className="h-4 w-4 rotate-90" />, title: 'dashed line style' },
-  { id: 'dotted', icon: <MoreHorizontal className="h-4 w-4" />, title: 'dotted line style' }
-];
-
 const ActionOverflowSheet: React.FC<ActionOverflowSheetProps> = ({
   isOpen,
   selectedNodeCount,
-  hasSelectedEdge,
-  activeEdgeStyle,
-  arrowHeadEnabled,
-  midArrowEnabled,
   onClose,
   onDelete,
   onDuplicateSelection,
+  onRenameSelection,
+  onToggleQuickAttribute,
+  isQuickAttributePinned,
   onAlignLeft,
   onAlignCenter,
   onAlignRight,
-  onDistribute,
-  onSetEdgeStyle,
-  onToggleArrowHead,
-  onToggleMidArrow
+  onDistribute
 }) => {
   const [isMounted, setIsMounted] = useState(isOpen);
   const sheetRef = useRef<HTMLDivElement>(null);
@@ -88,10 +78,10 @@ const ActionOverflowSheet: React.FC<ActionOverflowSheetProps> = ({
 
   if (!isMounted) return null;
 
-  const showEdgeActions = hasSelectedEdge;
-  const showNodeActions = !hasSelectedEdge && selectedNodeCount > 0;
+  const showNodeActions = selectedNodeCount > 0;
   const showArrangeActions = showNodeActions && selectedNodeCount >= 2;
   const showDistribute = showNodeActions && selectedNodeCount >= 3;
+  const shellPointerEvents = isOpen ? 'auto' : 'none';
 
   const handleTrapFocus = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'Tab') return;
@@ -102,7 +92,7 @@ const ActionOverflowSheet: React.FC<ActionOverflowSheetProps> = ({
       container.querySelectorAll<HTMLElement>(
         'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
       )
-    );
+    ) as HTMLElement[];
     if (focusable.length === 0) return;
 
     const first = focusable[0];
@@ -119,7 +109,7 @@ const ActionOverflowSheet: React.FC<ActionOverflowSheetProps> = ({
   };
 
   return (
-    <div className="ff-overflow-shell">
+    <div className="ff-overflow-shell" style={{ pointerEvents: shellPointerEvents }}>
       <button
         type="button"
         className="ff-overflow-backdrop"
@@ -136,12 +126,13 @@ const ActionOverflowSheet: React.FC<ActionOverflowSheetProps> = ({
         aria-modal="true"
         aria-label="Selection actions"
         onKeyDown={handleTrapFocus}
+        style={{ pointerEvents: shellPointerEvents }}
       >
         <div className="ff-overflow-head">
           <div>
             <div className="ui-section-title">Quick Actions</div>
             <div className="text-xs text-slate-500 dark:text-slate-400">
-              {showEdgeActions ? 'Connector styling and direction controls' : 'Selection edit and layout controls'}
+              Selection controls
             </div>
           </div>
           <button type="button" onClick={onClose} className={overflowButtonClass()} aria-label="Close actions">
@@ -152,6 +143,7 @@ const ActionOverflowSheet: React.FC<ActionOverflowSheetProps> = ({
         <div className="ff-overflow-grid">
           {showNodeActions ? (
             <>
+              <div className="col-span-full menu-section-label !px-1.5">Edit</div>
               <button
                 type="button"
                 onClick={() => {
@@ -180,8 +172,38 @@ const ActionOverflowSheet: React.FC<ActionOverflowSheetProps> = ({
                 <span>Duplicate</span>
               </button>
 
+              {selectedNodeCount === 1 ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onRenameSelection();
+                      onClose();
+                    }}
+                    title="Rename selected node"
+                    aria-label="Rename selected node"
+                    className={overflowButtonClass()}
+                  >
+                    <span>Rename</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onToggleQuickAttribute();
+                      onClose();
+                    }}
+                    title="Toggle account chip on nodes"
+                    aria-label="Toggle account chip on nodes"
+                    className={overflowButtonClass(isQuickAttributePinned)}
+                  >
+                    <span>{isQuickAttributePinned ? 'Hide Chip' : 'Show Chip'}</span>
+                  </button>
+                </>
+              ) : null}
+
               {showArrangeActions ? (
                 <>
+                  <div className="col-span-full menu-section-label !px-1.5">Arrange</div>
                   <button
                     type="button"
                     onClick={() => {
@@ -192,7 +214,7 @@ const ActionOverflowSheet: React.FC<ActionOverflowSheetProps> = ({
                     aria-label="Align selected left"
                     className={overflowButtonClass()}
                   >
-                    <span>L</span>
+                    <AlignStartVertical className="h-4 w-4" />
                     <span>Align Left</span>
                   </button>
                   <button
@@ -205,7 +227,7 @@ const ActionOverflowSheet: React.FC<ActionOverflowSheetProps> = ({
                     aria-label="Align selected center"
                     className={overflowButtonClass()}
                   >
-                    <span>C</span>
+                    <AlignCenterVertical className="h-4 w-4" />
                     <span>Align Center</span>
                   </button>
                   <button
@@ -218,7 +240,7 @@ const ActionOverflowSheet: React.FC<ActionOverflowSheetProps> = ({
                     aria-label="Align selected right"
                     className={overflowButtonClass()}
                   >
-                    <span>R</span>
+                    <AlignEndVertical className="h-4 w-4" />
                     <span>Align Right</span>
                   </button>
                 </>
@@ -235,66 +257,10 @@ const ActionOverflowSheet: React.FC<ActionOverflowSheetProps> = ({
                   aria-label="Distribute selected horizontally"
                   className={overflowButtonClass()}
                 >
-                  <span>Dist</span>
+                  <AlignHorizontalDistributeCenter className="h-4 w-4" />
                   <span>Distribute</span>
                 </button>
               ) : null}
-            </>
-          ) : null}
-
-          {showEdgeActions ? (
-            <>
-              {edgeStyleOptions.map((styleOption) => (
-                <button
-                  key={styleOption.id}
-                  type="button"
-                  onClick={() => onSetEdgeStyle(styleOption.id)}
-                  title={styleOption.title}
-                  aria-label={styleOption.title}
-                  aria-pressed={activeEdgeStyle === styleOption.id}
-                  className={overflowButtonClass(activeEdgeStyle === styleOption.id)}
-                >
-                  {styleOption.icon}
-                  <span>{styleOption.id}</span>
-                </button>
-              ))}
-
-              <button
-                type="button"
-                onClick={onToggleArrowHead}
-                aria-pressed={arrowHeadEnabled}
-                title="Toggle arrow head"
-                aria-label="Toggle arrow head"
-                className={overflowButtonClass(arrowHeadEnabled)}
-              >
-                <ArrowRight className="h-4 w-4" />
-                <span>Arrow Head</span>
-              </button>
-              <button
-                type="button"
-                onClick={onToggleMidArrow}
-                aria-pressed={midArrowEnabled}
-                title="Toggle middle arrow"
-                aria-label="Toggle middle arrow"
-                className={overflowButtonClass(midArrowEnabled)}
-              >
-                <ArrowRightLeft className="h-4 w-4" />
-                <span>Mid Arrow</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  onDelete();
-                  onClose();
-                }}
-                title="Delete selected"
-                aria-label="Delete selected item"
-                className={overflowButtonClass()}
-              >
-                <Trash2 className="h-4 w-4" />
-                <span>Delete</span>
-              </button>
             </>
           ) : null}
         </div>

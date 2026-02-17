@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Edge, EntityType, GridMode, Node, OverlayMode } from '../../types';
 import { normalizeNodeAccountType } from '../../lib/nodeDisplay';
 import { GRID_EXTENT, GRID_SIZE } from './canvasConstants';
@@ -18,7 +18,7 @@ type CanvasOverlaysProps = {
   swimlaneHiddenIds: number[];
   selectedSwimlaneId: number | null;
   onSelectSwimlane: (laneId: number | null) => void;
-  onRenameSwimlane: (laneId: number) => void;
+  onRenameSwimlane: (laneId: number, nextLabel: string) => void;
   onToggleSwimlaneCollapsed: (laneId: number) => void;
   onToggleSwimlaneLocked: (laneId: number) => void;
   onToggleSwimlaneHidden: (laneId: number) => void;
@@ -28,6 +28,76 @@ type CanvasOverlaysProps = {
 
 const SWIMLANE_MIN_WIDTH = 2200;
 const SWIMLANE_MARGIN_X = 420;
+const LANE_TITLE_PLACEHOLDER = 'Name this lane';
+
+const iconBaseClass = 'h-[13px] w-[13px] shrink-0';
+
+const LaneChevronIcon: React.FC<{ collapsed: boolean }> = ({ collapsed }) => (
+  <svg viewBox="0 0 16 16" className={iconBaseClass} aria-hidden="true">
+    <path
+      d={collapsed ? 'M5 3.5L11 8L5 12.5' : 'M3.5 6L8 10.5L12.5 6'}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
+const LaneLockIcon: React.FC<{ locked: boolean }> = ({ locked }) => (
+  <svg viewBox="0 0 16 16" className={iconBaseClass} aria-hidden="true">
+    <rect
+      x="3.5"
+      y="7.2"
+      width="9"
+      height="6"
+      rx="1.7"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+    />
+    <path
+      d={locked ? 'M5.8 7.2V5.2A2.2 2.2 0 018 3a2.2 2.2 0 012.2 2.2v2' : 'M5.6 7.2V5.4A2.4 2.4 0 0110 4'}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
+const LaneVisibilityIcon: React.FC<{ hidden: boolean }> = ({ hidden }) => (
+  <svg viewBox="0 0 16 16" className={iconBaseClass} aria-hidden="true">
+    <path
+      d="M1.8 8c1.6-2.6 3.7-3.9 6.2-3.9s4.6 1.3 6.2 3.9c-1.6 2.6-3.7 3.9-6.2 3.9S3.4 10.6 1.8 8z"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <circle cx="8" cy="8" r="1.8" fill="none" stroke="currentColor" strokeWidth="1.4" />
+    {hidden ? (
+      <path
+        d="M3 13L13 3"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    ) : null}
+  </svg>
+);
+
+const LaneMoreIcon: React.FC = () => (
+  <svg viewBox="0 0 16 16" className={iconBaseClass} aria-hidden="true">
+    <circle cx="4" cy="8" r="1.1" fill="currentColor" />
+    <circle cx="8" cy="8" r="1.1" fill="currentColor" />
+    <circle cx="12" cy="8" r="1.1" fill="currentColor" />
+  </svg>
+);
 
 const getRiskNodeIds = (nodes: Node[], edges: Edge[]) => {
   const set = new Set<string>();
@@ -104,6 +174,20 @@ const CanvasOverlays: React.FC<CanvasOverlaysProps> = ({
     },
     [laneCount]
   );
+  const getLaneTop = useCallback(
+    (laneId: number) => {
+      let collapsedBefore = 0;
+      for (const collapsedId of collapsedLaneSet) {
+        if (collapsedId < laneId) collapsedBefore += 1;
+      }
+      return (laneId - 1) * SWIMLANE_HEIGHT - collapsedBefore * (SWIMLANE_HEIGHT - SWIMLANE_HEADER_HEIGHT);
+    },
+    [collapsedLaneSet]
+  );
+  const getLaneHeight = useCallback(
+    (laneId: number) => (collapsedLaneSet.has(laneId) ? SWIMLANE_HEADER_HEIGHT : SWIMLANE_HEIGHT),
+    [collapsedLaneSet]
+  );
   const laneNodeCounts = useMemo(() => {
     if (!showSwimlanes || swimlaneLabels.length === 0) return [];
     const counts = Array.from({ length: swimlaneLabels.length }, () => 0);
@@ -146,8 +230,37 @@ const CanvasOverlays: React.FC<CanvasOverlaysProps> = ({
       width: spanWidth
     };
   }, [nodes]);
+  const [editingLaneId, setEditingLaneId] = useState<number | null>(null);
+  const [editingLaneName, setEditingLaneName] = useState('');
+  const [openActionsLaneId, setOpenActionsLaneId] = useState<number | null>(null);
+  const titleInputRef = useRef<HTMLInputElement | null>(null);
 
-  const stopCanvasEvent = useCallback((event: React.MouseEvent<SVGElement>) => {
+  useEffect(() => {
+    if (editingLaneId === null) return;
+    const input = titleInputRef.current;
+    if (!input) return;
+    input.focus();
+    input.select();
+  }, [editingLaneId]);
+
+  useEffect(() => {
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (editingLaneId !== null) {
+        event.preventDefault();
+        setEditingLaneId(null);
+        setEditingLaneName('');
+        return;
+      }
+      if (openActionsLaneId !== null) {
+        setOpenActionsLaneId(null);
+      }
+    };
+    window.addEventListener('keydown', onEscape);
+    return () => window.removeEventListener('keydown', onEscape);
+  }, [editingLaneId, openActionsLaneId]);
+
+  const stopCanvasEvent = useCallback((event: React.SyntheticEvent) => {
     event.preventDefault();
     event.stopPropagation();
   }, []);
@@ -155,18 +268,37 @@ const CanvasOverlays: React.FC<CanvasOverlaysProps> = ({
   const handleLaneHeaderClick = useCallback(
     (event: React.MouseEvent<SVGElement>, laneId: number) => {
       stopCanvasEvent(event);
+      setOpenActionsLaneId(null);
+      if (editingLaneId === laneId) return;
       onSelectSwimlane(selectedSwimlaneId === laneId ? null : laneId);
     },
-    [onSelectSwimlane, selectedSwimlaneId, stopCanvasEvent]
+    [editingLaneId, onSelectSwimlane, selectedSwimlaneId, stopCanvasEvent]
   );
 
-  const handleLaneRename = useCallback(
-    (event: React.MouseEvent<SVGElement>, laneId: number) => {
-      stopCanvasEvent(event);
-      onRenameSwimlane(laneId);
+  const beginLaneEdit = useCallback(
+    (laneId: number, laneLabel: string, event?: React.SyntheticEvent) => {
+      if (event) {
+        stopCanvasEvent(event);
+      }
+      setOpenActionsLaneId(null);
+      setEditingLaneId(laneId);
+      setEditingLaneName(laneLabel ?? '');
+      onSelectSwimlane(laneId);
     },
-    [onRenameSwimlane, stopCanvasEvent]
+    [onSelectSwimlane, stopCanvasEvent]
   );
+
+  const commitLaneEdit = useCallback(() => {
+    if (editingLaneId === null) return;
+    onRenameSwimlane(editingLaneId, editingLaneName);
+    setEditingLaneId(null);
+    setEditingLaneName('');
+  }, [editingLaneId, editingLaneName, onRenameSwimlane]);
+
+  const requestInspectorLaneNameFocus = useCallback((laneId: number) => {
+    if (typeof window === 'undefined') return;
+    window.dispatchEvent(new CustomEvent('finflow:focus-lane-name', { detail: { laneId } }));
+  }, []);
 
   return (
     <>
@@ -205,15 +337,20 @@ const CanvasOverlays: React.FC<CanvasOverlaysProps> = ({
       {showSwimlanes
         ? swimlaneLabels.map((laneLabel, index) => {
             const laneId = index + 1;
-            const y = index * SWIMLANE_HEIGHT;
+            const y = getLaneTop(laneId);
+            const laneHeight = getLaneHeight(laneId);
             const laneCount = laneNodeCounts[index] || 0;
             const isCollapsed = collapsedLaneSet.has(laneId);
             const isLocked = lockedLaneSet.has(laneId);
             const isHidden = hiddenLaneSet.has(laneId);
             const isSelected = selectedSwimlaneId === laneId;
-            const laneBodyOpacity = isHidden ? 0.16 : isCollapsed ? 0.22 : 0.8;
+            const laneBodyOpacity = isHidden ? 0.14 : isCollapsed ? 0.2 : 0.72;
+            // Keep lane controls inside the interactive canvas column. Without this clamp,
+            // the header can render beneath the left sidebar and become unclickable.
             const laneHeaderBaseX = Math.max(swimlaneSpan.x + 20, 360);
-            const laneActionBaseX = laneHeaderBaseX + 280;
+            const laneHeaderPanelWidth = 300;
+            const laneActionBaseX = laneHeaderBaseX + laneHeaderPanelWidth - 104;
+            const laneMenuY = y > 120 ? y - 108 : y + SWIMLANE_HEADER_HEIGHT + 4;
 
             return (
               <g key={`lane-${index}`}>
@@ -221,7 +358,7 @@ const CanvasOverlays: React.FC<CanvasOverlaysProps> = ({
                   x={swimlaneSpan.x}
                   y={y}
                   width={swimlaneSpan.width}
-                  height={SWIMLANE_HEIGHT}
+                  height={laneHeight}
                   fill={
                     index % 2 === 0
                       ? isDarkMode
@@ -238,7 +375,7 @@ const CanvasOverlays: React.FC<CanvasOverlaysProps> = ({
                   x={swimlaneSpan.x}
                   y={y}
                   width={swimlaneSpan.width}
-                  height={SWIMLANE_HEIGHT}
+                  height={laneHeight}
                   fill="none"
                   stroke={
                     isSelected
@@ -284,64 +421,15 @@ const CanvasOverlays: React.FC<CanvasOverlaysProps> = ({
                   y1={y + SWIMLANE_HEADER_HEIGHT}
                   x2={swimlaneSpan.x + swimlaneSpan.width}
                   y2={y + SWIMLANE_HEADER_HEIGHT}
-                  stroke={isDarkMode ? 'rgba(148, 163, 184, 0.24)' : 'rgba(148, 163, 184, 0.3)'}
-                  strokeWidth="1"
+                  stroke={isDarkMode ? 'rgba(148, 163, 184, 0.14)' : 'rgba(148, 163, 184, 0.12)'}
+                  strokeWidth="0.8"
                   className="pointer-events-none"
                 />
-                <rect
-                  x={laneHeaderBaseX}
-                  y={y + 8}
-                  width={260}
-                  height={22}
-                  rx={11}
-                  fill={isDarkMode ? 'rgba(15, 23, 42, 0.62)' : 'rgba(255, 255, 255, 0.94)'}
-                  stroke={isDarkMode ? 'rgba(148, 163, 184, 0.28)' : 'rgba(148, 163, 184, 0.34)'}
-                  strokeWidth="1"
-                  className="pointer-events-none"
-                />
-                <text
-                  x={laneHeaderBaseX + 14}
-                  y={y + 22}
-                  fontSize="11.5"
-                  fill={isDarkMode ? '#d7e2f2' : '#334155'}
-                  fontWeight="600"
-                  letterSpacing="0.01em"
-                >
-                  {(laneLabel?.trim() || `Swimlane ${index + 1}`).slice(0, 28)}
-                </text>
-                <text
-                  x={laneHeaderBaseX + 230}
-                  y={y + 22}
-                  fontSize="10.5"
-                  fill={isDarkMode ? '#94a3b8' : '#64748b'}
-                  fontWeight="600"
-                  textAnchor="end"
-                >
-                  {laneCount} {laneCount === 1 ? 'node' : 'nodes'}
-                </text>
-                <text
-                  x={laneHeaderBaseX + 400}
-                  y={y + 22}
-                  fontSize="10.5"
-                  fill={isDarkMode ? '#9aa9bf' : '#7b8aa1'}
-                  fontWeight="500"
-                  textAnchor="start"
-                >
-                  {isHidden
-                    ? 'Hidden lane'
-                    : isCollapsed
-                      ? 'Collapsed lane'
-                      : laneCount === 0
-                        ? 'Empty lane · drop nodes here'
-                        : ''}
-                </text>
-
                 <g
                   data-canvas-interactive="true"
                   data-testid={`swimlane-header-${laneId}`}
                   onMouseDown={stopCanvasEvent}
                   onClick={(event) => handleLaneHeaderClick(event, laneId)}
-                  onDoubleClick={(event) => handleLaneRename(event, laneId)}
                 >
                   <rect
                     x={swimlaneSpan.x}
@@ -352,101 +440,147 @@ const CanvasOverlays: React.FC<CanvasOverlaysProps> = ({
                   />
                 </g>
 
-                <g
-                  data-canvas-interactive="true"
-                  onMouseDown={stopCanvasEvent}
-                  onClick={(event) => {
-                    stopCanvasEvent(event);
-                    onToggleSwimlaneCollapsed(laneId);
-                  }}
+                <foreignObject
+                  x={laneHeaderBaseX}
+                  y={y + 3}
+                  width={laneHeaderPanelWidth}
+                  height={SWIMLANE_HEADER_HEIGHT - 6}
                 >
-                  <rect
-                    data-testid={`swimlane-toggle-collapse-${laneId}`}
-                    x={laneActionBaseX}
-                    y={y + 7}
-                    width={34}
-                    height={22}
-                    rx={10}
-                    fill={isCollapsed ? (isDarkMode ? 'rgba(56, 189, 248, 0.2)' : 'rgba(186, 230, 253, 0.9)') : isDarkMode ? 'rgba(15, 23, 42, 0.58)' : 'rgba(255, 255, 255, 0.95)'}
-                    stroke={isDarkMode ? 'rgba(148, 163, 184, 0.28)' : 'rgba(148, 163, 184, 0.34)'}
-                    strokeWidth="1"
-                  />
-                  <text
-                    x={laneActionBaseX + 17}
-                    y={y + 21}
-                    fontSize="11"
-                    fill={isDarkMode ? '#dbeafe' : '#1e3a8a'}
-                    fontWeight="700"
-                    textAnchor="middle"
-                    className="pointer-events-none"
-                  >
-                    {isCollapsed ? '+' : '-'}
-                  </text>
-                </g>
+                  <div xmlns="http://www.w3.org/1999/xhtml" className="ff-lane-header-ui">
+                    <div className="ff-lane-header-left">
+                      {editingLaneId === laneId ? (
+                        <input
+                          ref={titleInputRef}
+                          data-testid={`swimlane-title-input-${laneId}`}
+                          value={editingLaneName}
+                          onMouseDown={stopCanvasEvent}
+                          onClick={stopCanvasEvent}
+                          onChange={(event) => setEditingLaneName(event.target.value)}
+                          onBlur={() => commitLaneEdit()}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault();
+                              commitLaneEdit();
+                              return;
+                            }
+                            if (event.key === 'Escape') {
+                              event.preventDefault();
+                              setEditingLaneId(null);
+                              setEditingLaneName('');
+                            }
+                          }}
+                          className="ff-lane-title-input"
+                          placeholder={LANE_TITLE_PLACEHOLDER}
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          data-testid={`swimlane-title-trigger-${laneId}`}
+                          className="ff-lane-title-button"
+                          title="Edit lane name"
+                          onMouseDown={stopCanvasEvent}
+                          onClick={(event) => beginLaneEdit(laneId, laneLabel || '', event)}
+                        >
+                          {(laneLabel?.trim() || LANE_TITLE_PLACEHOLDER).slice(0, 36)}
+                        </button>
+                      )}
+                    </div>
 
-                <g
-                  data-canvas-interactive="true"
-                  onMouseDown={stopCanvasEvent}
-                  onClick={(event) => {
-                    stopCanvasEvent(event);
-                    onToggleSwimlaneLocked(laneId);
-                  }}
-                >
-                  <rect
-                    data-testid={`swimlane-toggle-lock-${laneId}`}
-                    x={laneActionBaseX + 40}
-                    y={y + 7}
-                    width={34}
-                    height={22}
-                    rx={10}
-                    fill={isLocked ? (isDarkMode ? 'rgba(251, 191, 36, 0.22)' : 'rgba(254, 243, 199, 0.9)') : isDarkMode ? 'rgba(15, 23, 42, 0.58)' : 'rgba(255, 255, 255, 0.95)'}
-                    stroke={isDarkMode ? 'rgba(148, 163, 184, 0.28)' : 'rgba(148, 163, 184, 0.34)'}
-                    strokeWidth="1"
-                  />
-                  <text
-                    x={laneActionBaseX + 57}
-                    y={y + 21}
-                    fontSize="10.5"
-                    fill={isDarkMode ? '#fef3c7' : '#854d0e'}
-                    fontWeight="700"
-                    textAnchor="middle"
-                    className="pointer-events-none"
-                  >
-                    {isLocked ? 'L' : 'U'}
-                  </text>
-                </g>
+                    <div className="ff-lane-header-right">
+                      <span className="ff-lane-count-text">
+                        {laneCount} {laneCount === 1 ? 'node' : 'nodes'}
+                      </span>
+                      <button
+                        type="button"
+                        data-testid={`swimlane-toggle-collapse-${laneId}`}
+                        className={`ff-lane-icon-button ${isCollapsed ? 'is-active' : ''}`}
+                        title="Lane options"
+                        aria-label={isCollapsed ? 'Expand lane' : 'Collapse lane'}
+                        onMouseDown={stopCanvasEvent}
+                        onClick={(event) => {
+                          stopCanvasEvent(event);
+                          onToggleSwimlaneCollapsed(laneId);
+                        }}
+                      >
+                        <LaneChevronIcon collapsed={isCollapsed} />
+                      </button>
+                      <button
+                        type="button"
+                        data-testid={`swimlane-more-trigger-${laneId}`}
+                        className={`ff-lane-icon-button ${openActionsLaneId === laneId ? 'is-active' : ''}`}
+                        title="More actions"
+                        aria-label="More actions"
+                        aria-expanded={openActionsLaneId === laneId}
+                        onMouseDown={stopCanvasEvent}
+                        onClick={(event) => {
+                          stopCanvasEvent(event);
+                          setOpenActionsLaneId((prev) => (prev === laneId ? null : laneId));
+                        }}
+                      >
+                        <LaneMoreIcon />
+                      </button>
+                    </div>
+                  </div>
+                </foreignObject>
 
-                <g
-                  data-canvas-interactive="true"
-                  onMouseDown={stopCanvasEvent}
-                  onClick={(event) => {
-                    stopCanvasEvent(event);
-                    onToggleSwimlaneHidden(laneId);
-                  }}
-                >
-                  <rect
-                    data-testid={`swimlane-toggle-hidden-${laneId}`}
-                    x={laneActionBaseX + 80}
-                    y={y + 7}
-                    width={34}
-                    height={22}
-                    rx={10}
-                    fill={isHidden ? (isDarkMode ? 'rgba(244, 114, 182, 0.22)' : 'rgba(251, 207, 232, 0.9)') : isDarkMode ? 'rgba(15, 23, 42, 0.58)' : 'rgba(255, 255, 255, 0.95)'}
-                    stroke={isDarkMode ? 'rgba(148, 163, 184, 0.28)' : 'rgba(148, 163, 184, 0.34)'}
-                    strokeWidth="1"
-                  />
-                  <text
-                    x={laneActionBaseX + 97}
-                    y={y + 21}
-                    fontSize="10.5"
-                    fill={isDarkMode ? '#fce7f3' : '#9d174d'}
-                    fontWeight="700"
-                    textAnchor="middle"
-                    className="pointer-events-none"
-                  >
-                    {isHidden ? 'S' : 'H'}
-                  </text>
-                </g>
+                {openActionsLaneId === laneId ? (
+                  <foreignObject x={laneActionBaseX - 62} y={laneMenuY} width={180} height={108}>
+                    <div xmlns="http://www.w3.org/1999/xhtml" className="ff-lane-menu-card">
+                      <button
+                        type="button"
+                        data-testid={`swimlane-toggle-lock-${laneId}`}
+                        className={`ff-lane-menu-item ${isLocked ? 'is-active' : ''}`}
+                        title={isLocked ? 'Unlock lane' : 'Lock lane'}
+                        onMouseDown={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                          stopCanvasEvent(event);
+                          onToggleSwimlaneLocked(laneId);
+                          setOpenActionsLaneId(null);
+                        }}
+                      >
+                        <LaneLockIcon locked={isLocked} />
+                        <span>{isLocked ? 'Unlock lane' : 'Lock lane'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        data-testid={`swimlane-toggle-hidden-${laneId}`}
+                        className={`ff-lane-menu-item ${isHidden ? 'is-active' : ''}`}
+                        title={isHidden ? 'Show lane' : 'Hide lane'}
+                        onMouseDown={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                          stopCanvasEvent(event);
+                          onToggleSwimlaneHidden(laneId);
+                          setOpenActionsLaneId(null);
+                        }}
+                      >
+                        <LaneVisibilityIcon hidden={isHidden} />
+                        <span>{isHidden ? 'Show lane' : 'Hide lane'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        className="ff-lane-menu-item"
+                        title="Rename lane"
+                        onMouseDown={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                          stopCanvasEvent(event);
+                          setOpenActionsLaneId(null);
+                          onSelectSwimlane(laneId);
+                          requestInspectorLaneNameFocus(laneId);
+                        }}
+                      >
+                        <svg viewBox="0 0 16 16" className={iconBaseClass} aria-hidden="true">
+                          <path
+                            d="M3 11.7V13h1.3l6.6-6.6-1.3-1.3L3 11.7zM11.5 4.5l1.1-1.1a1 1 0 00-1.4-1.4l-1.1 1.1 1.4 1.4z"
+                            fill="currentColor"
+                          />
+                        </svg>
+                        <span>Rename lane</span>
+                      </button>
+                    </div>
+                  </foreignObject>
+                ) : null}
               </g>
             );
           })

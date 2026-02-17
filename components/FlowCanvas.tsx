@@ -65,7 +65,7 @@ interface FlowCanvasProps {
   swimlaneHiddenIds: number[];
   selectedSwimlaneId: number | null;
   onSelectSwimlane: (laneId: number | null) => void;
-  onRenameSwimlane: (laneId: number) => void;
+  onRenameSwimlane: (laneId: number, nextLabel: string) => void;
   onToggleSwimlaneCollapsed: (laneId: number) => void;
   onToggleSwimlaneLocked: (laneId: number) => void;
   onToggleSwimlaneHidden: (laneId: number) => void;
@@ -78,6 +78,11 @@ interface FlowCanvasProps {
 
 const AUTOSCROLL_EDGE_THRESHOLD = 40;
 const AUTOSCROLL_MAX_SPEED = 16;
+const CONNECTOR_SNAP_PX = 20;
+const CONNECTOR_HYSTERESIS_MULTIPLIER = 1.35;
+const CONNECT_DRAG_SUPPRESS_CLICK_MS = 180;
+const CONNECT_DRAG_DISTANCE_PX = 4;
+const EDGE_CLICK_CYCLE_WINDOW_MS = 1200;
 
 type LodState = {
   compactNodes: boolean;
@@ -115,6 +120,13 @@ type ReconnectSession = {
   anchorNodeId: string;
   anchorPortIdx: number;
 };
+type EdgeClickCycleState = {
+  stack: string[];
+  edgeId: string;
+  clientX: number;
+  clientY: number;
+  at: number;
+};
 
 const parsePortHandleRef = (value: string): { nodeId: string; portIdx: number } | null => {
   const match = /^node-port-(.+)-([0-9]+)$/.exec(value);
@@ -139,6 +151,31 @@ const isInteractiveCanvasTarget = (target: EventTarget | null) => {
   return !!target.closest(
     '[data-canvas-interactive="true"], [data-node-id], [data-edge-id], button, input, textarea, select, a, summary'
   );
+};
+
+const isTargetWithinCanvas = (container: HTMLElement | null, target: EventTarget | null) => {
+  if (!container) return false;
+  if (typeof window === 'undefined') return false;
+  if (!(target instanceof window.Node)) return false;
+  return container.contains(target);
+};
+
+const pointToSegmentDistanceSq = (point: Position, start: Position, end: Position) => {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  if (dx === 0 && dy === 0) {
+    const px = point.x - start.x;
+    const py = point.y - start.y;
+    return px * px + py * py;
+  }
+
+  const t = ((point.x - start.x) * dx + (point.y - start.y) * dy) / (dx * dx + dy * dy);
+  const clampedT = Math.max(0, Math.min(1, t));
+  const closestX = start.x + clampedT * dx;
+  const closestY = start.y + clampedT * dy;
+  const cx = point.x - closestX;
+  const cy = point.y - closestY;
+  return cx * cx + cy * cy;
 };
 
 const resolvePendingConnectionFromNodeClick = (
@@ -267,10 +304,15 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
   const pendingConnectionRef = useRef<PendingConnection | null>(null);
   const isPortDragActiveRef = useRef(false);
   const activeReconnectRef = useRef<ReconnectSession | null>(null);
+  const hoverConnectionTargetRef = useRef<PendingConnection | null>(null);
+  const portDragStartClientRef = useRef<{ x: number; y: number } | null>(null);
+  const suppressPortClickUntilRef = useRef(0);
+  const edgeClickCycleRef = useRef<EdgeClickCycleState | null>(null);
   const pointerMoveRafRef = useRef<number | null>(null);
   const pendingPointerRef = useRef<{ clientX: number; clientY: number; altKey: boolean } | null>(null);
   const lastPointerClientRef = useRef<{ x: number; y: number } | null>(null);
   const isSpacePressedRef = useRef(false);
+  const canvasKeyboardScopeRef = useRef(false);
 
   useEffect(() => {
     viewportRef.current = viewport;
@@ -290,6 +332,10 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
     activeReconnectRef.current = next;
     setActiveReconnect(next);
   }, []);
+
+  useEffect(() => {
+    hoverConnectionTargetRef.current = hoverConnectionTarget;
+  }, [hoverConnectionTarget]);
 
   useEffect(() => {
     const zoom = viewport.zoom;
@@ -371,12 +417,35 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
     [laneCount]
   );
 
+  const getLaneTop = useCallback(
+    (laneId: number) => {
+      let collapsedBefore = 0;
+      for (const collapsedId of collapsedLaneSet) {
+        if (collapsedId < laneId) {
+          collapsedBefore += 1;
+        }
+      }
+      return (laneId - 1) * SWIMLANE_HEIGHT - collapsedBefore * (SWIMLANE_HEIGHT - SWIMLANE_HEADER_HEIGHT);
+    },
+    [collapsedLaneSet]
+  );
+
+  const getLaneHeight = useCallback(
+    (laneId: number) => (collapsedLaneSet.has(laneId) ? SWIMLANE_HEADER_HEIGHT : SWIMLANE_HEIGHT),
+    [collapsedLaneSet]
+  );
+
   const isNodeInteractionLocked = useCallback(
     (node: Node | null | undefined) => {
       if (!node) return false;
-      return !!node.data?.isLocked || lockedLaneSet.has(getNodeLaneId(node));
+      const laneId = getNodeLaneId(node);
+      return (
+        !!node.data?.isLocked ||
+        lockedLaneSet.has(laneId) ||
+        (showSwimlanes && nonRenderableLaneSet.has(laneId))
+      );
     },
-    [getNodeLaneId, lockedLaneSet]
+    [getNodeLaneId, lockedLaneSet, nonRenderableLaneSet, showSwimlanes]
   );
 
   const resolveDropConnectionTarget = useCallback(
@@ -389,9 +458,17 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
       if (typeof document === 'undefined') return null;
       const sourceNode = nodeById.get(source.nodeId);
       if (!sourceNode) return null;
+      const canvasElement = containerRef.current;
+      if (!canvasElement) return null;
+      const canvasRect = canvasElement.getBoundingClientRect();
+      const zoom = Math.max(viewportRef.current.zoom, 0.01);
 
       const sourcePortPosition = getPortPosition(sourceNode, source.portIdx);
       const targetElement = document.elementFromPoint(clientX, clientY);
+      const toClientPoint = (world: Position) => ({
+        x: canvasRect.left + viewportRef.current.x + world.x * zoom,
+        y: canvasRect.top + viewportRef.current.y + world.y * zoom
+      });
       const resolveNodeTarget = (targetNode: Node): PendingConnection => {
         const { sourcePorts, targetPorts } = getNodeHandlePortConfig(targetNode);
         const allowedPorts = requiredRole === 'source' ? sourcePorts : targetPorts;
@@ -401,6 +478,26 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
           portIdx: targetPortIdx
         };
       };
+      const previousTarget = hoverConnectionTargetRef.current;
+      if (previousTarget && previousTarget.nodeId !== source.nodeId) {
+        const previousNode = nodeById.get(previousTarget.nodeId);
+        if (previousNode && !isNodeInteractionLocked(previousNode)) {
+          const { sourcePorts, targetPorts } = getNodeHandlePortConfig(previousNode);
+          const allowedPorts = requiredRole === 'source' ? sourcePorts : targetPorts;
+          if (allowedPorts.includes(previousTarget.portIdx)) {
+            const previousPortClient = toClientPoint(getPortPosition(previousNode, previousTarget.portIdx));
+            const hysteresisDistance =
+              CONNECTOR_SNAP_PX * CONNECTOR_HYSTERESIS_MULTIPLIER;
+            const hysteresisDistanceSq = hysteresisDistance * hysteresisDistance;
+            const previousDistanceSq =
+              (previousPortClient.x - clientX) * (previousPortClient.x - clientX) +
+              (previousPortClient.y - clientY) * (previousPortClient.y - clientY);
+            if (previousDistanceSq <= hysteresisDistanceSq) {
+              return previousTarget;
+            }
+          }
+        }
+      }
 
       const handleElement = targetElement?.closest('[data-testid^="node-port-"]') as HTMLElement | null;
       if (handleElement) {
@@ -429,10 +526,9 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
         }
       }
 
-      const worldPoint = screenToWorld(clientX, clientY);
-      const worldThreshold = Math.max(14, 18 / Math.max(viewportRef.current.zoom, 0.01));
-      const worldThresholdSq = worldThreshold * worldThreshold;
+      const snapThresholdSq = CONNECTOR_SNAP_PX * CONNECTOR_SNAP_PX;
       let nearestNode: Node | null = null;
+      let nearestPortIdx = 0;
       let nearestDistance = Number.POSITIVE_INFINITY;
 
       for (const candidate of nodes) {
@@ -442,30 +538,34 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
         const allowedPorts = requiredRole === 'source' ? sourcePorts : targetPorts;
         for (const portIdx of allowedPorts) {
           const portPosition = getPortPosition(candidate, portIdx);
+          const portClient = toClientPoint(portPosition);
           const distance =
-            (portPosition.x - worldPoint.x) * (portPosition.x - worldPoint.x) +
-            (portPosition.y - worldPoint.y) * (portPosition.y - worldPoint.y);
-          if (distance <= worldThresholdSq && distance < nearestDistance) {
+            (portClient.x - clientX) * (portClient.x - clientX) +
+            (portClient.y - clientY) * (portClient.y - clientY);
+          if (distance <= snapThresholdSq && distance < nearestDistance) {
             nearestDistance = distance;
             nearestNode = candidate;
+            nearestPortIdx = portIdx;
           }
         }
       }
 
       if (nearestNode) {
-        return resolveNodeTarget(nearestNode);
+        return { nodeId: nearestNode.id, portIdx: nearestPortIdx };
       }
 
-      const fallbackPadding = Math.max(18, 24 / Math.max(viewportRef.current.zoom, 0.01));
+      const fallbackPadding = 18;
       for (const candidate of nodes) {
         if (candidate.id === source.nodeId) continue;
         if (isNodeInteractionLocked(candidate)) continue;
         const { width, height } = getNodeDimensions(candidate);
+        const candidateLeft = canvasRect.left + viewportRef.current.x + candidate.position.x * zoom;
+        const candidateTop = canvasRect.top + viewportRef.current.y + candidate.position.y * zoom;
         const inBounds =
-          worldPoint.x >= candidate.position.x - fallbackPadding &&
-          worldPoint.x <= candidate.position.x + width + fallbackPadding &&
-          worldPoint.y >= candidate.position.y - fallbackPadding &&
-          worldPoint.y <= candidate.position.y + height + fallbackPadding;
+          clientX >= candidateLeft - fallbackPadding &&
+          clientX <= candidateLeft + width * zoom + fallbackPadding &&
+          clientY >= candidateTop - fallbackPadding &&
+          clientY <= candidateTop + height * zoom + fallbackPadding;
         if (inBounds) {
           return resolveNodeTarget(candidate);
         }
@@ -473,7 +573,7 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
 
       return null;
     },
-    [isNodeInteractionLocked, nodeById, nodes, screenToWorld]
+    [isNodeInteractionLocked, nodeById, nodes]
   );
 
   const edgeOffsetMeta = useMemo(() => {
@@ -770,6 +870,10 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
 
   const handleCanvasMouseDownCapture = useCallback(
     (event: React.MouseEvent) => {
+      if (!isEditableTarget(event.target) && containerRef.current) {
+        containerRef.current.focus({ preventScroll: true });
+        canvasKeyboardScopeRef.current = true;
+      }
       if (event.button !== 0) return;
       if (isSpacePressedRef.current || isSpacePressed) {
         event.preventDefault();
@@ -1146,8 +1250,19 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
         ? { x: event.clientX, y: event.clientY }
         : lastPointerClientRef.current;
       if (dropPoint) {
+        const dragStart = portDragStartClientRef.current;
+        const isDragGesture =
+          !!dragStart &&
+          (dropPoint.x - dragStart.x) * (dropPoint.x - dragStart.x) +
+            (dropPoint.y - dragStart.y) * (dropPoint.y - dragStart.y) >
+            CONNECT_DRAG_DISTANCE_PX * CONNECT_DRAG_DISTANCE_PX;
+        if (isDragGesture) {
+          suppressPortClickUntilRef.current = Date.now() + CONNECT_DRAG_SUPPRESS_CLICK_MS;
+        }
         const requiredRole = reconnectSession?.endpoint === 'source' ? 'source' : 'target';
-        const dropTarget = resolveDropConnectionTarget(dropPoint.x, dropPoint.y, pending, requiredRole);
+        const dropTarget =
+          resolveDropConnectionTarget(dropPoint.x, dropPoint.y, pending, requiredRole) ||
+          hoverConnectionTargetRef.current;
         if (dropTarget && dropTarget.nodeId !== pending.nodeId) {
           if (reconnectSession) {
             if (reconnectSession.endpoint === 'target') {
@@ -1179,6 +1294,7 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
       updateReconnectSession(null);
       updatePendingConnection(null);
       setHoverConnectionTarget(null);
+      portDragStartClientRef.current = null;
     }
 
     if (pointerMoveRafRef.current !== null) {
@@ -1193,9 +1309,11 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
         if (!node || node.type === EntityType.ANCHOR) continue;
 
         const { height } = getNodeDimensions(node);
-        const laneIndex = getNodeLaneId(node) - 1;
-        const laneTop = laneIndex * SWIMLANE_HEIGHT + SWIMLANE_HEADER_HEIGHT + SWIMLANE_PADDING_Y;
-        const laneBottom = (laneIndex + 1) * SWIMLANE_HEIGHT - height - SWIMLANE_PADDING_Y;
+        const laneId = getNodeLaneId(node);
+        const laneTopRaw = getLaneTop(laneId);
+        const laneHeight = getLaneHeight(laneId);
+        const laneTop = laneTopRaw + SWIMLANE_HEADER_HEIGHT + SWIMLANE_PADDING_Y;
+        const laneBottom = laneTopRaw + laneHeight - height - SWIMLANE_PADDING_Y;
         const laneMax = Math.max(laneTop, laneBottom);
         const nextY = clamp(node.position.y, laneTop, laneMax);
 
@@ -1223,8 +1341,15 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
     handleMouseUp({ clientX: event.clientX, clientY: event.clientY });
   };
 
+  const handlePointerCancel = (event: React.PointerEvent) => {
+    // Pointer cancellations can happen on OS gestures / window focus changes.
+    // Treat as an abort/commit for any active gesture so we don't get "stuck" in a drag state.
+    handleMouseUp({ clientX: event.clientX, clientY: event.clientY });
+  };
+
   const handlePortClick = useCallback(
     (nodeId: string, portIdx: number, role: PortRole) => {
+      if (Date.now() < suppressPortClickUntilRef.current) return;
       const canUseConnect = canConnectFromPorts || pendingConnection !== null;
       if (!canUseConnect) return;
       if (isNodeInteractionLocked(nodeById.get(nodeId))) return;
@@ -1312,9 +1437,29 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
   }, [pendingConnection]);
 
   useEffect(() => {
+    const handleGlobalPointerDown = (event: PointerEvent) => {
+      if (isTargetWithinCanvas(containerRef.current, event.target)) return;
+      canvasKeyboardScopeRef.current = false;
+      if (isSpacePressedRef.current) {
+        isSpacePressedRef.current = false;
+        setIsSpacePressed(false);
+      }
+    };
+
+    window.addEventListener('pointerdown', handleGlobalPointerDown, true);
+    return () => {
+      window.removeEventListener('pointerdown', handleGlobalPointerDown, true);
+    };
+  }, []);
+
+  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.code === 'Space' || event.key === ' ') {
         if (isEditableTarget(event.target)) return;
+        // Scope temporary Space-pan to active canvas intent. This prevents global
+        // keyboard capture when focus is on menus, panels, or other chrome.
+        const keydownInsideCanvas = isTargetWithinCanvas(containerRef.current, event.target);
+        if (!canvasKeyboardScopeRef.current && !keydownInsideCanvas) return;
         event.preventDefault();
         isSpacePressedRef.current = true;
         setIsSpacePressed(true);
@@ -1326,6 +1471,8 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
         setDraggingNodes(null);
         setHasRecordedDragHistory(false);
         updatePendingConnection(null);
+        portDragStartClientRef.current = null;
+        suppressPortClickUntilRef.current = 0;
         setSelectionMarquee(null);
       }
     };
@@ -1418,12 +1565,158 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
     }
   };
 
+  const getEdgeStackAtClientPoint = useCallback(
+    (clientX: number, clientY: number): string[] => {
+      const domStack: string[] = [];
+      if (typeof document !== 'undefined') {
+        for (const element of document.elementsFromPoint(clientX, clientY)) {
+          if (!(element instanceof Element)) continue;
+          const edgeHost = element.closest('[data-edge-id]');
+          if (!edgeHost) continue;
+          const edgeId = edgeHost.getAttribute('data-edge-id');
+          if (!edgeId || domStack.includes(edgeId)) continue;
+          domStack.push(edgeId);
+        }
+      }
+      if (domStack.length > 1) {
+        return domStack;
+      }
+
+      const worldPoint = screenToWorld(clientX, clientY);
+      const zoom = Math.max(viewportRef.current.zoom, 0.01);
+      const worldThresholdSq = Math.pow(14 / zoom, 2);
+      const relaxedThresholdSq = Math.pow(26 / zoom, 2);
+      const edgeDistances: Array<{
+        edgeId: string;
+        sourceId: string;
+        targetId: string;
+        distanceSq: number;
+        renderOrder: number;
+      }> = [];
+
+      renderedEdges.forEach((edge, renderOrder) => {
+        const source = nodeById.get(edge.sourceId);
+        const target = nodeById.get(edge.targetId);
+        if (!source || !target) return;
+
+        const start = getPortPosition(source, edge.sourcePortIdx);
+        const end = getPortPosition(target, edge.targetPortIdx);
+
+        let distanceSq = Number.POSITIVE_INFINITY;
+        if (edge.pathType === 'orthogonal') {
+          const elbowX = start.x + (end.x - start.x) / 2;
+          const elbowTop = { x: elbowX, y: start.y };
+          const elbowBottom = { x: elbowX, y: end.y };
+          distanceSq = Math.min(
+            pointToSegmentDistanceSq(worldPoint, start, elbowTop),
+            pointToSegmentDistanceSq(worldPoint, elbowTop, elbowBottom),
+            pointToSegmentDistanceSq(worldPoint, elbowBottom, end)
+          );
+        } else {
+          distanceSq = pointToSegmentDistanceSq(worldPoint, start, end);
+        }
+
+        edgeDistances.push({
+          edgeId: edge.id,
+          sourceId: edge.sourceId,
+          targetId: edge.targetId,
+          distanceSq,
+          renderOrder
+        });
+      });
+
+      const geometricCandidates = edgeDistances.filter((candidate) => candidate.distanceSq <= worldThresholdSq);
+      if (geometricCandidates.length > 0) {
+        geometricCandidates.sort((a, b) => {
+          if (a.distanceSq === b.distanceSq) {
+            // Higher render order draws later and is visually on top.
+            return b.renderOrder - a.renderOrder;
+          }
+          return a.distanceSq - b.distanceSq;
+        });
+        const strictStack = geometricCandidates.map((candidate) => candidate.edgeId);
+        if (strictStack.length > 1) {
+          return strictStack;
+        }
+
+        const primary = geometricCandidates[0];
+        const expandedCandidates = edgeDistances
+          .filter((candidate) => {
+            if (candidate.distanceSq > relaxedThresholdSq) return false;
+            if (candidate.edgeId === primary.edgeId) return true;
+            return (
+              candidate.sourceId === primary.sourceId ||
+              candidate.sourceId === primary.targetId ||
+              candidate.targetId === primary.sourceId ||
+              candidate.targetId === primary.targetId
+            );
+          })
+          .sort((a, b) => {
+            if (a.distanceSq === b.distanceSq) {
+              return b.renderOrder - a.renderOrder;
+            }
+            return a.distanceSq - b.distanceSq;
+          })
+          .map((candidate) => candidate.edgeId);
+
+        if (expandedCandidates.length > 1) {
+          return expandedCandidates;
+        }
+        return strictStack;
+      }
+      return domStack;
+    },
+    [nodeById, renderedEdges, screenToWorld]
+  );
+
   const handleEdgeSelect = useCallback(
-    (id: string) => {
-      onSelectEdge(id);
+    (id: string, clientPoint?: { x: number; y: number }) => {
+      let nextEdgeId = id;
+      if (clientPoint) {
+        const stack = getEdgeStackAtClientPoint(clientPoint.x, clientPoint.y);
+        if (stack.length > 1) {
+          const now = Date.now();
+          const previous = edgeClickCycleRef.current;
+          const hasSameMembers =
+            !!previous &&
+            previous.stack.length === stack.length &&
+            previous.stack.every((edgeId) => stack.includes(edgeId));
+          const hasPrimaryMatch =
+            !!previous && stack.length > 0 && stack[0] === previous.edgeId;
+          const shouldCycle =
+            !!previous &&
+            previous.stack.length > 1 &&
+            (hasSameMembers || hasPrimaryMatch) &&
+            now - previous.at <= EDGE_CLICK_CYCLE_WINDOW_MS;
+
+          const cycleStack = shouldCycle ? previous!.stack : stack;
+          let nextIndex = stack.indexOf(id);
+          if (nextIndex < 0) nextIndex = 0;
+          if (shouldCycle) {
+            const previousIndex = cycleStack.indexOf(previous!.edgeId);
+            if (previousIndex >= 0) {
+              nextIndex = (previousIndex + 1) % cycleStack.length;
+            }
+          }
+          nextEdgeId = cycleStack[nextIndex] || stack[nextIndex] || id;
+          edgeClickCycleRef.current = {
+            stack: cycleStack,
+            edgeId: nextEdgeId,
+            clientX: clientPoint.x,
+            clientY: clientPoint.y,
+            at: now
+          };
+        } else {
+          edgeClickCycleRef.current = null;
+        }
+      } else {
+        edgeClickCycleRef.current = null;
+      }
+
+      onSelectEdge(nextEdgeId);
       onOpenInspector();
     },
-    [onOpenInspector, onSelectEdge]
+    [getEdgeStackAtClientPoint, onOpenInspector, onSelectEdge]
   );
 
   const handleNodeMouseDown = useCallback(
@@ -1534,6 +1827,7 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
   const handleNodePortMouseDown = useCallback(
     (event: React.PointerEvent, id: string, portIdx: number, role: PortRole) => {
       event.stopPropagation();
+      event.preventDefault();
       if (!canConnectFromPorts) return;
       if (role !== 'source' && role !== 'both') return;
       if (isNodeInteractionLocked(nodeById.get(id))) return;
@@ -1541,6 +1835,7 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
       updateReconnectSession(null);
       updatePendingConnection({ nodeId: id, portIdx });
       updatePortDragActive(true);
+      portDragStartClientRef.current = { x: event.clientX, y: event.clientY };
       lastPointerClientRef.current = { x: event.clientX, y: event.clientY };
       setPointerWorld(world);
       onPointerWorldChange?.(world);
@@ -1573,6 +1868,7 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
       });
       updatePendingConnection({ nodeId: anchorNodeId, portIdx: anchorPortIdx });
       updatePortDragActive(true);
+      portDragStartClientRef.current = { x: clientPoint.x, y: clientPoint.y };
       lastPointerClientRef.current = { x: clientPoint.x, y: clientPoint.y };
       setPointerWorld(world);
       onPointerWorldChange?.(world);
@@ -1627,6 +1923,7 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
   return (
     <div
       ref={containerRef}
+      tabIndex={0}
       className={`relative h-full w-full overflow-hidden ${
         panningState
           ? 'cursor-grabbing'
@@ -1641,11 +1938,22 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
             ? 'ring-1 ring-accent/35'
             : 'ring-1 ring-accent/30'
           : ''
-      }`}
+      } focus:outline-none`}
       style={{
         background: isDarkMode
           ? 'radial-gradient(1100px circle at 14% 0%, rgba(79,70,229,0.12) 0%, transparent 56%), var(--ff-surface-canvas)'
           : 'radial-gradient(900px circle at 12% 0%, rgba(79,70,229,0.08) 0%, transparent 54%), var(--ff-surface-canvas)'
+      }}
+      onFocusCapture={() => {
+        canvasKeyboardScopeRef.current = true;
+      }}
+      onBlurCapture={(event) => {
+        if (isTargetWithinCanvas(containerRef.current, event.relatedTarget)) return;
+        canvasKeyboardScopeRef.current = false;
+        if (isSpacePressedRef.current) {
+          isSpacePressedRef.current = false;
+          setIsSpacePressed(false);
+        }
       }}
       onMouseDownCapture={handleCanvasMouseDownCapture}
       onMouseDown={handleCanvasMouseDown}
@@ -1654,6 +1962,7 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
       onMouseLeave={handleMouseUp}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
       onContextMenu={handleCanvasContextMenu}
       onWheel={handleWheel}
     >
@@ -1731,7 +2040,15 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
                 if (!sourceNode) return null;
 
                 const start = getPortPosition(sourceNode, pendingConnection.portIdx);
-                const end = pointerWorld;
+                // Visual-only snap: when we have a candidate target port, draw the preview edge
+                // to that port so users can trust the drop will connect.
+                const end = (() => {
+                  const hoverTarget = hoverConnectionTarget;
+                  if (!hoverTarget) return pointerWorld;
+                  const targetNode = nodeById.get(hoverTarget.nodeId);
+                  if (!targetNode) return pointerWorld;
+                  return getPortPosition(targetNode, hoverTarget.portIdx);
+                })();
                 const midX = (start.x + end.x) / 2;
                 const midY = (start.y + end.y) / 2;
                 const dx = end.x - start.x;
@@ -1821,6 +2138,7 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
         >
           {contextMenu.kind === 'node' ? (
             <>
+              <div className="menu-section-label">Node</div>
               <button
                 type="button"
                 data-testid="context-menu-rename-node"
@@ -1868,6 +2186,7 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
             </>
           ) : (
             <>
+              <div className="menu-section-label">Insert</div>
               <button
                 type="button"
                 data-testid="context-menu-add-sponsor"
@@ -1896,7 +2215,8 @@ const FlowCanvas: React.FC<FlowCanvasProps> = ({
               >
                 Add Text node
               </button>
-              <div className="my-1 border-t border-slate-200/75 dark:border-slate-700/75" />
+              <div className="menu-divider-soft" />
+              <div className="menu-section-label">Viewport</div>
               <button
                 type="button"
                 data-testid="context-menu-fit-view"

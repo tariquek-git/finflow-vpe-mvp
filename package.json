@@ -16,6 +16,10 @@
     "test:mvp:mobile-toolbar": "playwright test e2e/mvp-mobile-toolbar.spec.ts",
     "test:mvp:recovery-status": "playwright test e2e/mvp-recovery-status.spec.ts",
     "test:mvp:help-reopen": "playwright test e2e/mvp-help-reopen.spec.ts",
+    "test:mouse": "playwright test e2e/mouse-interactions.spec.ts",
+    "test:workspace:collision": "playwright test e2e/workspace-collision.spec.ts",
+    "test:notes:migrations": "playwright test e2e/diagram-migrations.spec.ts",
+    "test:notes:isolation": "playwright test e2e/inspector-notes-isolation.spec.ts",
     "test:acceptance": "playwright test e2e/acceptance.spec.ts",
     "test:a11y": "playwright test e2e/a11y.spec.ts",
     "test:qa": "playwright test",
@@ -25,6 +29,7 @@
   "dependencies": {
     "@google/genai": "^1.40.0",
     "@hookform/resolvers": "^5.2.2",
+    "@supabase/supabase-js": "^2.95.3",
     "@xyflow/react": "^12.10.0",
     "html-to-image": "^1.11.13",
     "jspdf": "^4.1.0",

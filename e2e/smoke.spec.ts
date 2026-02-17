@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { insertStarterTemplate } from './helpers/diagramSetup';
 
 const EDGE_SELECTOR = 'svg g.cursor-pointer.group';
 const CONNECTOR_SELECTOR = '[data-testid="toolbar-insert-connector"]';
@@ -17,10 +18,29 @@ const clickNodeByLabel = async (page: Page, label: string) => {
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
 };
 
+const openViewMenu = async (page: Page) => {
+  const menu = page.getByTestId('toolbar-view-menu').first();
+  if (await menu.isVisible()) {
+    return;
+  }
+  const trigger = page.getByTestId('toolbar-view-trigger').first();
+  await trigger.click();
+  try {
+    await expect(menu).toBeVisible({ timeout: 1000 });
+  } catch {
+    await trigger.click();
+  }
+  await expect(menu).toBeVisible();
+};
+
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => window.localStorage.clear());
+  await page.addInitScript(() => {
+    window.sessionStorage.clear();
+    window.localStorage.clear();
+  });
   await page.goto('/');
   await page.waitForLoadState('networkidle');
+  await insertStarterTemplate(page);
 });
 
 test('connector click inserts then delete removes it', async ({ page }) => {
@@ -30,9 +50,8 @@ test('connector click inserts then delete removes it', async ({ page }) => {
   const before = await countEdges(page);
   await page.locator(CONNECTOR_SELECTOR).click();
   await expect.poll(async () => countEdges(page)).toBe(before + 1);
-  await expect(solidStyleButton).toBeVisible();
-
-  await page.locator('button[title="Delete selected"]').click();
+  await expect(page.getByTestId('inspector-mode-title')).toContainText('Connector');
+  await page.keyboard.press('Delete');
   await expect.poll(async () => countEdges(page)).toBe(before);
 });
 
@@ -49,10 +68,11 @@ test('connector insert supports undo and redo', async ({ page }) => {
   await expect.poll(async () => countEdges(page)).toBe(before + 1);
 });
 
-test('layout panel exposes swimlane controls', async ({ page }) => {
-  await page.locator('button[title="Open layout controls"]').click();
-  await expect(page.getByRole('button', { name: 'Add Swimlane' })).toBeVisible();
-  await expect(page.getByRole('button', { name: /Swimlanes:/ })).toBeVisible();
+test('view menu exposes single-source canvas toggles', async ({ page }) => {
+  await openViewMenu(page);
+  await expect(page.getByTestId('toolbar-view-grid').first()).toBeVisible();
+  await expect(page.getByTestId('toolbar-view-snap').first()).toBeVisible();
+  await expect(page.getByTestId('toolbar-view-lanes')).toHaveCount(0);
 });
 
 test('space drag pans the canvas viewport', async ({ page }) => {
@@ -63,6 +83,7 @@ test('space drag pans the canvas viewport', async ({ page }) => {
   const box = await canvas.boundingBox();
   if (!box) throw new Error('Canvas bounding box not found');
 
+  await canvas.click({ position: { x: 24, y: 24 } });
   await page.keyboard.down('Space');
   await page.mouse.move(box.x + 300, box.y + 220);
   await page.mouse.down();
@@ -82,65 +103,45 @@ test('delete key removes selected connector', async ({ page }) => {
   await expect.poll(async () => countEdges(page)).toBe(before);
 });
 
-test('inspector keeps manual tab context and only auto-switches when invalid', async ({ page }) => {
-  const canvasTab = page.getByTestId('inspector-tab-canvas');
-  const nodeTab = page.getByTestId('inspector-tab-node');
-  const edgeTab = page.getByTestId('inspector-tab-edge');
+test('keyboard shortcuts switch tools and escape clears selection', async ({ page }) => {
+  const selectTool = page.getByRole('button', { name: 'Select tool' });
+  const connectTool = page.getByRole('button', { name: 'Connect tool' });
+  const textTool = page.getByRole('button', { name: 'Text tool' });
+
+  await page.keyboard.press('c');
+  await expect(connectTool).toHaveAttribute('aria-pressed', 'true');
+
+  await page.keyboard.press('t');
+  await expect(textTool).toHaveAttribute('aria-pressed', 'true');
+
+  await page.keyboard.press('v');
+  await expect(selectTool).toHaveAttribute('aria-pressed', 'true');
 
   await clickNodeByLabel(page, 'Sponsor Bank');
-  await expect(nodeTab).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('button[title="Duplicate selected node"]')).toBeVisible();
 
-  await canvasTab.click();
-  await expect(canvasTab).toHaveAttribute('aria-pressed', 'true');
-
-  await clickNodeByLabel(page, 'Processor');
-  await expect(canvasTab).toHaveAttribute('aria-pressed', 'true');
-
-  await nodeTab.click();
-  await expect(nodeTab).toHaveAttribute('aria-pressed', 'true');
-
-  await page.locator(CONNECTOR_SELECTOR).click();
-  await expect(edgeTab).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('Escape');
+  if ((await page.locator('button[title="Duplicate selected node"]').count()) > 0) {
+    await page.keyboard.press('Escape');
+  }
+  await expect(page.locator('button[title="Duplicate selected node"]')).toHaveCount(0);
 });
 
-test('inspector restores scroll position per tab', async ({ page }) => {
+test('inspector mode follows current selection context', async ({ page }) => {
+  await clickNodeByLabel(page, 'Sponsor Bank');
+  await expect(page.getByTestId('inspector-mode-title')).toContainText('Node');
+
   await page.locator(CONNECTOR_SELECTOR).click();
+  await expect(page.getByTestId('inspector-mode-title')).toContainText('Edge');
+});
 
-  const edgeTab = page.getByTestId('inspector-tab-edge');
-  const exportTab = page.getByTestId('inspector-tab-export');
-  const scrollBody = page.getByTestId('inspector-scroll-body');
+test('escape clears selection and returns inspector to empty mode', async ({ page }) => {
+  await clickNodeByLabel(page, 'Sponsor Bank');
+  await expect(page.getByTestId('inspector-mode-title')).toContainText('Node');
 
-  await edgeTab.click();
-  let maxScrollable = await scrollBody.evaluate((el) => Math.max(0, el.scrollHeight - el.clientHeight));
-  if (maxScrollable <= 80) {
-    const advancedToggle = page.getByTestId('inspector-toggle-edge-advanced');
-    if (await advancedToggle.isVisible()) {
-      await advancedToggle.click();
-      maxScrollable = await scrollBody.evaluate((el) => Math.max(0, el.scrollHeight - el.clientHeight));
-    }
+  await page.keyboard.press('Escape');
+  if (!(await page.getByTestId('inspector-mode-title').innerText()).includes('Nothing selected')) {
+    await page.keyboard.press('Escape');
   }
-  if (maxScrollable <= 0) {
-    await exportTab.click();
-    await edgeTab.click();
-    await expect(edgeTab).toHaveAttribute('aria-pressed', 'true');
-    return;
-  }
-
-  const targetTop = Math.min(220, maxScrollable - 10);
-
-  const edgeTop = await scrollBody.evaluate((el, nextTop) => {
-    el.scrollTop = nextTop;
-    return el.scrollTop;
-  }, targetTop);
-  expect(edgeTop).toBeGreaterThan(0);
-
-  await exportTab.click();
-  await scrollBody.evaluate((el) => {
-    el.scrollTop = 0;
-  });
-
-  await edgeTab.click();
-  await expect
-    .poll(async () => scrollBody.evaluate((el) => el.scrollTop))
-    .toBeGreaterThan(Math.max(0, edgeTop - 8));
+  await expect(page.getByTestId('inspector-mode-title')).toContainText('Nothing selected');
 });

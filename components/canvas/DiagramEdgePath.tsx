@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { getBezierPath } from '@xyflow/react';
 import { RAIL_COLORS } from '../../constants';
 import { Edge, FlowDirection, Node } from '../../types';
@@ -14,7 +14,14 @@ type DiagramEdgePathProps = {
   showLabelAtZoom: boolean;
   offsetIndex: number;
   totalEdges: number;
-  onSelect: (id: string) => void;
+  zoom: number;
+  onStartReconnect?: (
+    edgeId: string,
+    endpoint: 'source' | 'target',
+    clientPoint: { x: number; y: number }
+  ) => void;
+  isReconnectActive?: boolean;
+  onSelect: (id: string, clientPoint?: { x: number; y: number }) => void;
 };
 
 const getDirectionStage = (direction: FlowDirection) => {
@@ -24,6 +31,8 @@ const getDirectionStage = (direction: FlowDirection) => {
   if (direction === FlowDirection.PULL) return 'Capture';
   return 'Transfer';
 };
+
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
 const DiagramEdgePathComponent: React.FC<DiagramEdgePathProps> = ({
   edge,
@@ -35,84 +44,91 @@ const DiagramEdgePathComponent: React.FC<DiagramEdgePathProps> = ({
   showLabelAtZoom,
   offsetIndex,
   totalEdges,
+  zoom,
+  onStartReconnect,
+  isReconnectActive = false,
   onSelect
 }) => {
   const [isHovered, setIsHovered] = useState(false);
-  const [transientPath, setTransientPath] = useState<{
-    d: string;
-    color: string;
-    dash: string;
-  } | null>(null);
-  const [transientVisible, setTransientVisible] = useState(false);
-  const previousPathRef = useRef<string | null>(null);
-  const fadeTimeoutRef = useRef<number | null>(null);
   const start = getPortPosition(source, edge.sourcePortIdx);
   const end = getPortPosition(target, edge.targetPortIdx);
+  const railColor = edge.isExceptionPath ? '#ef4444' : RAIL_COLORS[edge.rail] || (isDarkMode ? '#818cf8' : '#4f46e5');
+  const neutralColor = isDarkMode ? '#5b6b84' : '#9aa8ba';
 
-  const gap = 30;
-  const centerOffset = ((totalEdges - 1) * gap) / 2;
-  const offsetValue = offsetIndex * gap - centerOffset;
-
-  const strokeColor = edge.isExceptionPath ? '#ef4444' : RAIL_COLORS[edge.rail] || '#94a3b8';
   let strokeDash = '';
   if (edge.style === 'dashed' || edge.isExceptionPath) strokeDash = '6,4';
   if (edge.style === 'dotted') strokeDash = '2,4';
 
-  const dx = end.x - start.x;
-  const dy = end.y - start.y;
-  const length = Math.sqrt(dx * dx + dy * dy) || 1;
-  const nx = -dy / length;
-  const ny = dx / length;
+  const pathMeta = useMemo(() => {
+    const gap = 26;
+    const centerOffset = ((totalEdges - 1) * gap) / 2;
+    const offsetValue = offsetIndex * gap - centerOffset;
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const length = Math.sqrt(dx * dx + dy * dy) || 1;
+    const nx = -dy / length;
+    const ny = dx / length;
+    const finalOffset = edge.curvature !== undefined ? edge.curvature : offsetValue;
+    const shiftedStart = { x: start.x + nx * (finalOffset / 2), y: start.y + ny * (finalOffset / 2) };
+    const shiftedEnd = { x: end.x + nx * (finalOffset / 2), y: end.y + ny * (finalOffset / 2) };
 
-  const finalOffset = edge.curvature !== undefined ? edge.curvature : offsetValue;
-  const shiftedStart = { x: start.x + nx * (finalOffset / 2), y: start.y + ny * (finalOffset / 2) };
-  const shiftedEnd = { x: end.x + nx * (finalOffset / 2), y: end.y + ny * (finalOffset / 2) };
-  const [pathD, labelX, labelY] = getBezierPath({
-    sourceX: shiftedStart.x,
-    sourceY: shiftedStart.y,
-    sourcePosition: getHandlePosition(edge.sourcePortIdx),
-    targetX: shiftedEnd.x,
-    targetY: shiftedEnd.y,
-    targetPosition: getHandlePosition(edge.targetPortIdx),
-    curvature: 0.28
-  });
-
-  const midPoint = { x: labelX, y: labelY };
-  const endAngle = Math.atan2(shiftedEnd.y - shiftedStart.y, shiftedEnd.x - shiftedStart.x) * (180 / Math.PI);
-  const showLabel = showLabelAtZoom;
-  const shouldRevealLabel = showLabel && (isSelected || isHovered);
-
-  useEffect(() => {
-    const previousPath = previousPathRef.current;
-    if (previousPath && previousPath !== pathD) {
-      setTransientPath({
-        d: previousPath,
-        color: strokeColor,
-        dash: strokeDash
-      });
-      setTransientVisible(true);
-      window.requestAnimationFrame(() => {
-        setTransientVisible(false);
-      });
-
-      if (fadeTimeoutRef.current !== null) {
-        window.clearTimeout(fadeTimeoutRef.current);
-      }
-      fadeTimeoutRef.current = window.setTimeout(() => {
-        setTransientPath(null);
-      }, 170);
+    if (edge.pathType === 'orthogonal') {
+      const elbowX = shiftedStart.x + (shiftedEnd.x - shiftedStart.x) / 2;
+      const d = `M ${shiftedStart.x} ${shiftedStart.y} L ${elbowX} ${shiftedStart.y} L ${elbowX} ${shiftedEnd.y} L ${shiftedEnd.x} ${shiftedEnd.y}`;
+      return {
+        d,
+        labelX: elbowX,
+        labelY: (shiftedStart.y + shiftedEnd.y) / 2,
+        shiftedStart,
+        shiftedEnd
+      };
     }
 
-    previousPathRef.current = pathD;
-  }, [pathD, strokeColor, strokeDash]);
+    const [bezierD, labelX, labelY] = getBezierPath({
+      sourceX: shiftedStart.x,
+      sourceY: shiftedStart.y,
+      sourcePosition: getHandlePosition(edge.sourcePortIdx),
+      targetX: shiftedEnd.x,
+      targetY: shiftedEnd.y,
+      targetPosition: getHandlePosition(edge.targetPortIdx),
+      curvature: 0.16
+    });
 
-  useEffect(() => {
-    return () => {
-      if (fadeTimeoutRef.current !== null) {
-        window.clearTimeout(fadeTimeoutRef.current);
-      }
+    return {
+      d: bezierD,
+      labelX,
+      labelY,
+      shiftedStart,
+      shiftedEnd
     };
-  }, []);
+  }, [edge.curvature, edge.pathType, edge.sourcePortIdx, edge.targetPortIdx, end.x, end.y, offsetIndex, start.x, start.y, totalEdges]);
+
+  const strokeWidth = isSelected ? 3.1 : isHovered ? 2.2 : clamp(edge.thickness || 1.5, 1.2, 1.8);
+  const strokeColor = isSelected ? railColor : isHovered ? railColor : neutralColor;
+  const strokeOpacity = isSelected ? 0.98 : isHovered ? 0.78 : 0.52;
+  const hitStrokeWidth = 14;
+  const reconnectHandleRadius = clamp(9 / Math.max(zoom, 0.01), 4, 20);
+  const reconnectDotRadius = clamp(3.5 / Math.max(zoom, 0.01), 1.8, 8);
+  const reconnectOffset = clamp(14 / Math.max(zoom, 0.01), 8, 24);
+  const showLabel = showLabelAtZoom;
+  const revealLabel = showLabel && (isSelected || isHovered);
+  const labelText = edge.label?.trim() || edge.rail || getDirectionStage(edge.direction);
+  const endAngle =
+    Math.atan2(pathMeta.shiftedEnd.y - pathMeta.shiftedStart.y, pathMeta.shiftedEnd.x - pathMeta.shiftedStart.x) *
+    (180 / Math.PI);
+  const edgeDx = pathMeta.shiftedEnd.x - pathMeta.shiftedStart.x;
+  const edgeDy = pathMeta.shiftedEnd.y - pathMeta.shiftedStart.y;
+  const edgeLength = Math.sqrt(edgeDx * edgeDx + edgeDy * edgeDy) || 1;
+  const edgeUx = edgeDx / edgeLength;
+  const edgeUy = edgeDy / edgeLength;
+  const reconnectSource = {
+    x: pathMeta.shiftedStart.x + edgeUx * reconnectOffset,
+    y: pathMeta.shiftedStart.y + edgeUy * reconnectOffset
+  };
+  const reconnectTarget = {
+    x: pathMeta.shiftedEnd.x - edgeUx * reconnectOffset,
+    y: pathMeta.shiftedEnd.y - edgeUy * reconnectOffset
+  };
 
   return (
     <g
@@ -122,48 +138,44 @@ const DiagramEdgePathComponent: React.FC<DiagramEdgePathProps> = ({
       data-dimmed={isDimmed ? 'true' : 'false'}
       onClick={(event) => {
         event.stopPropagation();
-        onSelect(edge.id);
+        onSelect(edge.id, { x: event.clientX, y: event.clientY });
       }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      style={{ opacity: isDimmed ? 0.2 : 1 }}
+      style={{ opacity: isDimmed ? 0.22 : 1 }}
     >
-      <path d={pathD} stroke="transparent" strokeWidth="16" fill="none" />
-
-      {transientPath ? (
-        <path
-          d={transientPath.d}
-          stroke={transientPath.color}
-          strokeWidth={isSelected ? 4.6 : edge.thickness ? Math.max(2, edge.thickness) : 2.2}
-          strokeDasharray={transientPath.dash}
-          fill="none"
-          opacity={transientVisible ? 0.42 : 0}
-          className="pointer-events-none transition-opacity duration-[160ms]"
-        />
-      ) : null}
-
       <path
-        d={pathD}
-        stroke={strokeColor}
-        strokeWidth={isSelected ? 4.6 : edge.thickness ? Math.max(2, edge.thickness) : 2.2}
-        strokeDasharray={strokeDash}
+        d={pathMeta.d}
+        stroke="rgba(15,23,42,0.001)"
+        strokeWidth={hitStrokeWidth}
         fill="none"
-        className="transition-[stroke-width,opacity] duration-150"
+        vectorEffect="non-scaling-stroke"
+        style={{ pointerEvents: 'stroke' }}
       />
 
       <path
-        d={pathD}
+        d={pathMeta.d}
         stroke={strokeColor}
-        strokeWidth={isSelected ? 10 : 7}
+        strokeWidth={strokeWidth}
+        strokeDasharray={strokeDash}
+        strokeOpacity={strokeOpacity}
         fill="none"
-        opacity={isSelected ? 0.44 : 0}
-        className="pointer-events-none transition-opacity duration-150 group-hover:opacity-30"
+        className="transition-[stroke-width,stroke,opacity] duration-150"
+      />
+
+      <path
+        d={pathMeta.d}
+        stroke={railColor}
+        strokeWidth={isSelected ? 6 : 4.5}
+        fill="none"
+        opacity={isSelected ? 0.22 : 0}
+        className="pointer-events-none transition-opacity duration-150"
       />
 
       {edge.sequence !== undefined && edge.sequence > 0 ? (
-        <g transform={`translate(${midPoint.x}, ${midPoint.y})`}>
-          <circle r="9" fill={strokeColor} />
-          <text textAnchor="middle" dy="3.5" fontSize="9" fontWeight="bold" fill="white">
+        <g transform={`translate(${pathMeta.labelX}, ${pathMeta.labelY})`}>
+          <circle r="8" fill={railColor} />
+          <text textAnchor="middle" dy="3.2" fontSize="8.3" fontWeight="bold" fill="white">
             {edge.sequence}
           </text>
         </g>
@@ -171,46 +183,104 @@ const DiagramEdgePathComponent: React.FC<DiagramEdgePathProps> = ({
 
       {edge.showArrowHead ? (
         <g transform={`translate(${end.x}, ${end.y}) rotate(${endAngle})`}>
-          <path d="M -10 -5 L 0 0 L -10 5 Z" fill={strokeColor} />
+          <path d="M -9 -4.5 L 0 0 L -9 4.5 Z" fill={strokeColor} opacity={isSelected ? 1 : 0.85} />
         </g>
       ) : null}
 
       {edge.showMidArrow ? (
-        <g transform={`translate(${midPoint.x}, ${midPoint.y}) rotate(${endAngle})`}>
-          <path d="M -8 -4 L 0 0 L -8 4 Z" fill={strokeColor} />
+        <g transform={`translate(${pathMeta.labelX}, ${pathMeta.labelY}) rotate(${endAngle})`}>
+          <path d="M -7 -3.5 L 0 0 L -7 3.5 Z" fill={strokeColor} opacity={0.9} />
         </g>
+      ) : null}
+
+      {isSelected && onStartReconnect ? (
+        <>
+          <circle
+            cx={reconnectSource.x}
+            cy={reconnectSource.y}
+            r={reconnectHandleRadius}
+            fill="rgba(15,23,42,0.001)"
+            className="cursor-pointer"
+            stroke={isReconnectActive ? railColor : 'transparent'}
+            strokeWidth={Math.max(1.25 / Math.max(zoom, 0.01), 0.8)}
+            style={{ pointerEvents: 'all' }}
+            data-testid={`edgepoint-source-${edge.id}`}
+            data-canvas-interactive="true"
+            onPointerDown={(event) => {
+              event.stopPropagation();
+              event.preventDefault();
+              if (typeof event.currentTarget.setPointerCapture === 'function') {
+                event.currentTarget.setPointerCapture(event.pointerId);
+              }
+              onStartReconnect(edge.id, 'source', { x: event.clientX, y: event.clientY });
+            }}
+          />
+          <circle
+            cx={reconnectSource.x}
+            cy={reconnectSource.y}
+            r={reconnectDotRadius}
+            fill={isDarkMode ? '#e2e8f0' : '#334155'}
+            className="pointer-events-none"
+          />
+          <circle
+            cx={reconnectTarget.x}
+            cy={reconnectTarget.y}
+            r={reconnectHandleRadius}
+            fill="rgba(15,23,42,0.001)"
+            className="cursor-pointer"
+            stroke={isReconnectActive ? railColor : 'transparent'}
+            strokeWidth={Math.max(1.25 / Math.max(zoom, 0.01), 0.8)}
+            style={{ pointerEvents: 'all' }}
+            data-testid={`edgepoint-target-${edge.id}`}
+            data-canvas-interactive="true"
+            onPointerDown={(event) => {
+              event.stopPropagation();
+              event.preventDefault();
+              if (typeof event.currentTarget.setPointerCapture === 'function') {
+                event.currentTarget.setPointerCapture(event.pointerId);
+              }
+              onStartReconnect(edge.id, 'target', { x: event.clientX, y: event.clientY });
+            }}
+          />
+          <circle
+            cx={reconnectTarget.x}
+            cy={reconnectTarget.y}
+            r={reconnectDotRadius}
+            fill={isDarkMode ? '#e2e8f0' : '#334155'}
+            className="pointer-events-none"
+          />
+        </>
       ) : null}
 
       {showLabel ? (
         <foreignObject
           data-testid={`edge-label-${edge.id}`}
-          x={midPoint.x - 70}
-          y={midPoint.y - (finalOffset > 0 ? 58 : -16)}
-          width="140"
-          height="50"
+          x={pathMeta.labelX - 56}
+          y={pathMeta.labelY - 20}
+          width="112"
+          height="22"
           className={`pointer-events-none overflow-visible transition-opacity duration-150 ${
-            shouldRevealLabel ? 'opacity-100' : 'opacity-0'
+            isSelected ? 'opacity-100' : isHovered ? 'opacity-90' : revealLabel ? 'opacity-65' : 'opacity-0'
           }`}
         >
-          <div className="flex flex-col items-center justify-center">
+          <div className="flex justify-center">
             <div
-              className={`rounded-full border px-2.5 py-0.5 text-[8px] font-bold uppercase tracking-[0.06em] whitespace-nowrap shadow-sm ${
+              className={`rounded-full border px-1 py-[1px] text-[8px] font-medium tracking-[0.01em] whitespace-nowrap ${
+                isSelected
+                  ? isDarkMode
+                    ? 'border-indigo-300/60 bg-indigo-500/18 text-indigo-100'
+                    : 'border-indigo-300/70 bg-indigo-50/85 text-indigo-700'
+                  : isHovered
+                    ? isDarkMode
+                      ? 'border-slate-500/80 bg-slate-900/88 text-slate-200'
+                      : 'border-slate-300/90 bg-white/90 text-slate-700'
+                    :
                 isDarkMode
-                  ? 'border-slate-600 bg-slate-900/95 text-slate-100'
-                  : 'border-slate-300 bg-white/95 text-slate-700'
+                  ? 'border-slate-600/60 bg-slate-900/78 text-slate-300'
+                  : 'border-slate-300/65 bg-white/75 text-slate-500'
               }`}
             >
-              {edge.label || edge.rail || getDirectionStage(edge.direction)}
-              {edge.amount ? <span className="ml-1 text-emerald-500">${edge.amount}</span> : null}
-            </div>
-            <div
-              className={`mt-1 rounded-full border px-1.5 py-[1px] text-[7px] font-semibold uppercase tracking-[0.08em] ${
-                isDarkMode
-                  ? 'border-slate-700/90 bg-slate-900/90 text-slate-300'
-                  : 'border-slate-300/90 bg-white/90 text-slate-500'
-              }`}
-            >
-              {edge.rail || getDirectionStage(edge.direction)}
+              {labelText}
             </div>
           </div>
         </foreignObject>

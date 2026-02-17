@@ -1,12 +1,17 @@
 import { expect, test, type Download, type Page } from '@playwright/test';
+import { insertStarterTemplate } from './helpers/diagramSetup';
 
 const clickNodeByLabel = async (page: Page, label: string) => {
   const locator = page.locator('div.group.absolute').filter({ hasText: label }).first();
-  const box = await locator.boundingBox();
-  if (!box) {
-    throw new Error(`Could not find node bounding box for ${label}`);
-  }
-  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await expect(locator).toBeVisible({ timeout: 15000 });
+  await locator.click();
+};
+
+const selectFirstEdge = async (page: Page) => {
+  const edge = page.locator('g[data-edge-id]').first();
+  await expect(edge).toBeVisible({ timeout: 15000 });
+  await edge.dispatchEvent('click');
+  await expect(page.getByTestId('inspector-mode-title')).toContainText('Edge');
 };
 
 const openFileMenu = async (page: Page) => {
@@ -32,10 +37,23 @@ const readDownloadText = async (download: Download): Promise<string> => {
   return Buffer.concat(chunks).toString('utf8');
 };
 
+const importDiagramText = async (page: Page, jsonText: string) => {
+  await page.locator('input[type="file"][accept*="json"]').first().setInputFiles({
+    name: 'notes-roundtrip.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(jsonText, 'utf8')
+  });
+};
+
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => window.localStorage.clear());
   await page.goto('/');
+  await page.evaluate(() => {
+    window.sessionStorage.clear();
+    window.localStorage.clear();
+  });
+  await page.reload();
   await page.waitForLoadState('networkidle');
+  await insertStarterTemplate(page);
 });
 
 test('node documentation notes stay isolated from metadata tags', async ({ page }) => {
@@ -56,6 +74,7 @@ test('node documentation notes stay isolated from metadata tags', async ({ page 
   await page.locator('#node-field-tags').fill('ops,critical');
   await page.locator('#node-field-external-refs').fill('REF-1234');
   await page.keyboard.press('Tab');
+  await page.waitForTimeout(350);
 
   await expect(notesInput).toHaveValue(noteText);
 
@@ -70,8 +89,73 @@ test('node documentation notes stay isolated from metadata tags', async ({ page 
   };
   const sponsorNode = payload.diagram?.nodes?.find((node) => node.label === 'Sponsor Bank');
 
-  expect(sponsorNode?.description || '').toContain('[[finflow-meta]]');
-  expect(sponsorNode?.description || '').toContain('tags=ops,critical');
   expect(sponsorNode?.data?.notes).toBe(noteText);
   expect(sponsorNode?.data?.notes || '').not.toContain('tags=');
+
+  page.once('dialog', (dialog) => dialog.accept());
+  const resetMenu = await openFileMenu(page);
+  await resetMenu.getByTestId('toolbar-reset-canvas').click();
+
+  const importMenu = await openFileMenu(page);
+  await importMenu.getByTestId('toolbar-import-json').click();
+  await importDiagramText(page, exportedText);
+
+  await clickNodeByLabel(page, 'Sponsor Bank');
+  if ((await metadataToggle.getAttribute('aria-expanded')) === 'false') {
+    await metadataToggle.click();
+  }
+
+  const importedNotesValue = await notesInput.inputValue();
+  expect(importedNotesValue).toBe(noteText);
+  expect(importedNotesValue).not.toContain('tags=');
+  await expect(page.locator('#node-field-tags')).toHaveValue('ops,critical');
+  await expect(page.locator('#node-field-external-refs')).toHaveValue('REF-1234');
+});
+
+test('edge notes are stored in edge.data.notes and survive export/import', async ({ page }) => {
+  await selectFirstEdge(page);
+
+  const edgeNotesInput = page.locator('#edge-field-notes');
+  const edgeNoteText = 'Edge runbook: retry on timeout, escalate after 3 failures.';
+  await edgeNotesInput.fill(edgeNoteText);
+  await edgeNotesInput.blur();
+
+  const fileMenu = await openFileMenu(page);
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    fileMenu.getByTestId('toolbar-export-json').click()
+  ]);
+  const exportedText = await readDownloadText(download);
+  const payload = JSON.parse(exportedText) as {
+    diagram?: { edges?: Array<{ id?: string; data?: { notes?: string } }> };
+  };
+  expect(payload.diagram?.edges?.[0]?.data?.notes).toBe(edgeNoteText);
+
+  page.once('dialog', (dialog) => dialog.accept());
+  const resetMenu = await openFileMenu(page);
+  await resetMenu.getByTestId('toolbar-reset-canvas').click();
+  const importMenu = await openFileMenu(page);
+  await importMenu.getByTestId('toolbar-import-json').click();
+  await importDiagramText(page, exportedText);
+
+  await selectFirstEdge(page);
+  await expect(edgeNotesInput).toHaveValue(edgeNoteText);
+});
+
+test('switching selection while typing notes commits to the original node only', async ({ page }) => {
+  await clickNodeByLabel(page, 'Sponsor Bank');
+  await expect(page.getByTestId('inspector-mode-title')).toContainText('Node');
+
+  const notesInput = page.locator('#node-field-notes');
+  const sponsorNotes = 'Sponsor-only note should not leak to other nodes.';
+  await notesInput.fill(sponsorNotes);
+
+  await clickNodeByLabel(page, 'Processor');
+  await expect(page.getByTestId('inspector-mode-title')).toContainText('Node');
+
+  const processorNotesInput = page.locator('#node-field-notes');
+  await expect(processorNotesInput).toHaveValue('');
+
+  await clickNodeByLabel(page, 'Sponsor Bank');
+  await expect(notesInput).toHaveValue(sponsorNotes);
 });

@@ -279,11 +279,11 @@ const performanceQa = async (browser, result) => {
       snapshot,
       layout
     }) => {
-      window.localStorage.setItem(workspaceIndexKey, JSON.stringify(workspaceSummary));
-      window.localStorage.setItem(activeWorkspaceKey, workspaceId);
-      window.localStorage.setItem(workspaceDiagramKey, JSON.stringify(snapshot));
-      window.localStorage.setItem(workspaceLayoutKey, JSON.stringify(layout));
-      window.localStorage.setItem(qKey, 'true');
+      window.sessionStorage.setItem(workspaceIndexKey, JSON.stringify(workspaceSummary));
+      window.sessionStorage.setItem(activeWorkspaceKey, workspaceId);
+      window.sessionStorage.setItem(workspaceDiagramKey, JSON.stringify(snapshot));
+      window.sessionStorage.setItem(workspaceLayoutKey, JSON.stringify(layout));
+      window.sessionStorage.setItem(qKey, 'true');
     },
     {
       WORKSPACE_INDEX_STORAGE_KEY,

@@ -9,8 +9,13 @@ type FloatingContextBarProps = {
   isMobileViewport: boolean;
   anchor: { x: number; y: number } | null;
   activeTool: ToolMode;
+  zoom: number;
   onSetActiveTool: (tool: ToolMode) => void;
-  onAutoConnectEdge: () => void;
+  onZoomOut: () => void;
+  onZoomIn: () => void;
+  onResetZoom: () => void;
+  onFitView: () => void;
+  onSetZoomPercent: (percent: number) => void;
   onAddConnector: () => void;
   onConnectorNativeDragStart: (event: React.DragEvent<HTMLButtonElement>) => void;
   onDelete: () => void;
@@ -20,13 +25,9 @@ type FloatingContextBarProps = {
   onAlignRight: () => void;
   onDistribute: () => void;
   selectedNodeCount: number;
-  hasSelectedEdge: boolean;
-  activeEdgeStyle: 'solid' | 'dashed' | 'dotted';
-  onSetEdgeStyle: (style: 'solid' | 'dashed' | 'dotted') => void;
-  arrowHeadEnabled: boolean;
-  midArrowEnabled: boolean;
-  onToggleArrowHead: () => void;
-  onToggleMidArrow: () => void;
+  onRenameSelection: () => void;
+  onToggleQuickAttribute: () => void;
+  isQuickAttributePinned: boolean;
 };
 
 const FloatingContextBar: React.FC<FloatingContextBarProps> = ({
@@ -34,8 +35,13 @@ const FloatingContextBar: React.FC<FloatingContextBarProps> = ({
   isMobileViewport,
   anchor,
   activeTool,
+  zoom,
   onSetActiveTool,
-  onAutoConnectEdge,
+  onZoomOut,
+  onZoomIn,
+  onResetZoom,
+  onFitView,
+  onSetZoomPercent,
   onAddConnector,
   onConnectorNativeDragStart,
   onDelete,
@@ -45,25 +51,22 @@ const FloatingContextBar: React.FC<FloatingContextBarProps> = ({
   onAlignRight,
   onDistribute,
   selectedNodeCount,
-  hasSelectedEdge,
-  activeEdgeStyle,
-  onSetEdgeStyle,
-  arrowHeadEnabled,
-  midArrowEnabled,
-  onToggleArrowHead,
-  onToggleMidArrow
+  onRenameSelection,
+  onToggleQuickAttribute,
+  isQuickAttributePinned
 }) => {
   const [isOverflowOpen, setIsOverflowOpen] = useState(false);
 
   const visibility = useMemo(() => {
-    const hasSelection = selectedNodeCount > 0 || hasSelectedEdge;
+    const hasSelection = selectedNodeCount > 0;
     const canShowSelectionActions = hasSelection && activeTool === 'select';
+    const shouldShowDesktopTray = canShowSelectionActions && selectedNodeCount >= 2;
 
     return {
-      showDesktopTray: !isMobileViewport && canShowSelectionActions && !!anchor,
+      showDesktopTray: !isMobileViewport && shouldShowDesktopTray && !!anchor,
       showMobileMore: isMobileViewport && canShowSelectionActions
     };
-  }, [activeTool, anchor, hasSelectedEdge, isMobileViewport, selectedNodeCount]);
+  }, [activeTool, anchor, isMobileViewport, selectedNodeCount]);
 
   useEffect(() => {
     if (!visibility.showMobileMore && isOverflowOpen) {
@@ -81,11 +84,16 @@ const FloatingContextBar: React.FC<FloatingContextBarProps> = ({
     <>
       <BottomToolDock
         activeTool={activeTool}
+        zoom={zoom}
         isMobileViewport={isMobileViewport}
         showMoreButton={visibility.showMobileMore}
         isMoreOpen={isOverflowOpen}
         onSetActiveTool={onSetActiveTool}
-        onAutoConnectEdge={onAutoConnectEdge}
+        onZoomOut={onZoomOut}
+        onZoomIn={onZoomIn}
+        onResetZoom={onResetZoom}
+        onFitView={onFitView}
+        onSetZoomPercent={onSetZoomPercent}
         onAddConnector={onAddConnector}
         onConnectorNativeDragStart={onConnectorNativeDragStart}
         onToggleMore={() => setIsOverflowOpen((prev) => !prev)}
@@ -95,19 +103,15 @@ const FloatingContextBar: React.FC<FloatingContextBarProps> = ({
         <SelectionActionTray
           anchor={anchor}
           selectedNodeCount={selectedNodeCount}
-          hasSelectedEdge={hasSelectedEdge}
-          activeEdgeStyle={activeEdgeStyle}
-          arrowHeadEnabled={arrowHeadEnabled}
-          midArrowEnabled={midArrowEnabled}
           onDelete={onDelete}
           onDuplicateSelection={onDuplicateSelection}
+          onRenameSelection={onRenameSelection}
+          onToggleQuickAttribute={onToggleQuickAttribute}
+          isQuickAttributePinned={isQuickAttributePinned}
           onAlignLeft={onAlignLeft}
           onAlignCenter={onAlignCenter}
           onAlignRight={onAlignRight}
           onDistribute={onDistribute}
-          onSetEdgeStyle={onSetEdgeStyle}
-          onToggleArrowHead={onToggleArrowHead}
-          onToggleMidArrow={onToggleMidArrow}
         />
       ) : null}
 
@@ -115,20 +119,16 @@ const FloatingContextBar: React.FC<FloatingContextBarProps> = ({
         <ActionOverflowSheet
           isOpen={isOverflowOpen}
           selectedNodeCount={selectedNodeCount}
-          hasSelectedEdge={hasSelectedEdge}
-          activeEdgeStyle={activeEdgeStyle}
-          arrowHeadEnabled={arrowHeadEnabled}
-          midArrowEnabled={midArrowEnabled}
           onClose={() => setIsOverflowOpen(false)}
           onDelete={onDelete}
           onDuplicateSelection={onDuplicateSelection}
+          onRenameSelection={onRenameSelection}
+          onToggleQuickAttribute={onToggleQuickAttribute}
+          isQuickAttributePinned={isQuickAttributePinned}
           onAlignLeft={onAlignLeft}
           onAlignCenter={onAlignCenter}
           onAlignRight={onAlignRight}
           onDistribute={onDistribute}
-          onSetEdgeStyle={onSetEdgeStyle}
-          onToggleArrowHead={onToggleArrowHead}
-          onToggleMidArrow={onToggleMidArrow}
         />
       ) : null}
     </>

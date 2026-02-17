@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import type { GridMode } from '../../types';
 import FunctionToolbar from './FunctionToolbar';
+import { Chip } from '../ui/Chip';
 
 type SaveState = 'saving' | 'saved' | 'error';
 
@@ -57,6 +58,7 @@ type TopBarProps = {
   showSwimlanes: boolean;
   showPorts: boolean;
   showMinimap: boolean;
+  enableSwimlaneToggle?: boolean;
   gridMode: GridMode;
   saveStatus: SaveStatus;
   onToggleSidebar: () => void;
@@ -79,6 +81,7 @@ type TopBarProps = {
   onRestoreRecovery: () => void;
   onCreateWorkspace: () => void;
   onOpenWorkspace: (workspaceId: string) => void;
+  onInsertStarterTemplate: () => void;
   onResetCanvas: () => void;
   onImportDiagram: () => void;
   onExportDiagram: () => void;
@@ -123,6 +126,7 @@ const TopBar: React.FC<TopBarProps> = ({
   showSwimlanes,
   showPorts,
   showMinimap,
+  enableSwimlaneToggle = true,
   gridMode,
   saveStatus,
   onToggleSidebar,
@@ -145,6 +149,7 @@ const TopBar: React.FC<TopBarProps> = ({
   onRestoreRecovery,
   onCreateWorkspace,
   onOpenWorkspace,
+  onInsertStarterTemplate,
   onResetCanvas,
   onImportDiagram,
   onExportDiagram,
@@ -153,12 +158,6 @@ const TopBar: React.FC<TopBarProps> = ({
   onExportPdf,
   onRetrySave
 }) => {
-  const rowMeta = (
-    <span className="hidden shrink-0 rounded-full bg-slate-100/85 px-2.5 py-1 text-[10px] font-semibold text-slate-600 xl:inline-flex dark:bg-slate-800/80 dark:text-slate-300">
-      {nodesCount} nodes • {edgesCount} edges
-    </span>
-  );
-
   const saveStatusText =
     saveStatus.state === 'saving'
       ? 'Saving…'
@@ -193,7 +192,7 @@ const TopBar: React.FC<TopBarProps> = ({
   }, []);
 
   React.useEffect(() => {
-    const onWindowMouseDown = (event: MouseEvent) => {
+    const onWindowClickCapture = (event: MouseEvent) => {
       const target = event.target;
       if (!(target instanceof Node)) return;
       [statusDetailsRef, viewDetailsRef].forEach((ref) => {
@@ -211,10 +210,10 @@ const TopBar: React.FC<TopBarProps> = ({
       closeDetails();
     };
 
-    window.addEventListener('mousedown', onWindowMouseDown);
+    window.addEventListener('click', onWindowClickCapture, true);
     window.addEventListener('keydown', onWindowKeyDown);
     return () => {
-      window.removeEventListener('mousedown', onWindowMouseDown);
+      window.removeEventListener('click', onWindowClickCapture, true);
       window.removeEventListener('keydown', onWindowKeyDown);
     };
   }, [closeDetails]);
@@ -251,7 +250,6 @@ const TopBar: React.FC<TopBarProps> = ({
             <span className="mx-1.5 text-text-muted/60">·</span>
             <span className="shrink-0 font-bold tracking-[0.08em]">{workspaceShortId}</span>
           </span>
-          {rowMeta}
 
           <details ref={statusDetailsRef} className="relative">
             <summary
@@ -263,47 +261,36 @@ const TopBar: React.FC<TopBarProps> = ({
               <span className="max-w-[13rem] truncate">{saveStatusText}</span>
             </summary>
             <div className="status-pill-menu absolute left-0 z-40 mt-1.5 min-w-[16.5rem]">
+              <div className="menu-section-label">System</div>
               <div className="px-2 py-1">
-                <div className="text-[11px] font-semibold text-text-muted">
-                  Save status
-                </div>
-                <div className="mt-1 text-[13px] font-semibold text-text-primary">{saveStatusText}</div>
+                <div className="text-[11px] font-semibold text-text-primary">{saveStatusText}</div>
                 {saveStatus.errorText ? (
                   <div className="mt-1 text-[11px] text-rose-700 dark:text-rose-300">{saveStatus.errorText}</div>
                 ) : null}
+                <div className="menu-meta-line">{backupStatusText}</div>
+                <div className="menu-meta-line">Storage: Session-only (export JSON to keep work)</div>
+                <div className="menu-meta-line">
+                  {isAIEnabled ? (isAILoading ? 'AI status: Running' : 'AI status: Ready') : 'AI status: Off for MVP'}
+                </div>
               </div>
-              <div className="my-1 border-t border-divider/65" />
-              <div className="px-2 py-1 text-[12px] text-text-secondary">{backupStatusText}</div>
-              <div className="px-2 py-1 text-[12px] text-text-secondary">
-                {isAIEnabled ? (isAILoading ? 'AI status: Running' : 'AI status: Ready') : 'AI status: Off for MVP'}
-              </div>
+              <div className="menu-divider-soft" />
+              <div className="menu-section-label">Actions</div>
               {saveStatus.state === 'error' ? (
                 <button type="button" onClick={() => runMenuAction(onRetrySave, statusDetailsRef)} className="menu-item mt-1">
                   <RotateCcw className="h-3.5 w-3.5" />
                   Retry Save
                 </button>
               ) : null}
-              <button
-                type="button"
-                onClick={() => runMenuAction(onRestoreRecovery, statusDetailsRef)}
-                className="menu-item mt-1"
-                disabled={!hasRecoverySnapshot}
-              >
-                <RotateCcw className="h-3.5 w-3.5" />
-                Restore Backup
-              </button>
-              <a href={feedbackHref} target="_blank" rel="noreferrer" className="menu-item mt-1">
-                Feedback
-              </a>
             </div>
           </details>
           {!isAIEnabled ? (
-            <span
+            <Chip
+              tone="default"
               data-testid="ai-disabled-badge"
-              className="status-chip h-7 border-amber-300/70 bg-amber-50/80 px-2 text-[11px] font-semibold text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/12 dark:text-amber-200"
+              className="status-chip h-7 !px-2 !text-[11px] font-semibold opacity-85"
             >
               AI Off
-            </span>
+            </Chip>
           ) : null}
         </div>
 
@@ -351,19 +338,6 @@ const TopBar: React.FC<TopBarProps> = ({
             </button>
           </div>
 
-          <FunctionToolbar
-            recentWorkspaces={recentWorkspaces}
-            onRestoreRecovery={onRestoreRecovery}
-            onCreateWorkspace={onCreateWorkspace}
-            onOpenWorkspace={onOpenWorkspace}
-            onResetCanvas={onResetCanvas}
-            onImportDiagram={onImportDiagram}
-            onExportDiagram={onExportDiagram}
-            onExportSvg={onExportSvg}
-            onExportPng={onExportPng}
-            onExportPdf={onExportPdf}
-          />
-
           <details ref={viewDetailsRef} data-testid="toolbar-view-details" className="relative">
             <summary
               data-testid="toolbar-view-trigger"
@@ -371,9 +345,9 @@ const TopBar: React.FC<TopBarProps> = ({
               aria-label="View settings"
             >
               <Settings2 className="h-3.5 w-3.5" />
-              <span>View</span>
             </summary>
             <div data-testid="toolbar-view-menu" className="menu-panel absolute right-0 z-40 mt-1.5 min-w-[14rem]">
+              <div className="menu-section-label">Canvas</div>
               <button
                 type="button"
                 data-testid="toolbar-view-grid"
@@ -392,24 +366,20 @@ const TopBar: React.FC<TopBarProps> = ({
                 aria-pressed={snapToGrid}
               >
                 <span>Snap</span>
-                <span className="flex items-center gap-1">
-                  <span className="ui-kbd-hint">S</span>
-                  {snapToGrid ? <Check className="h-3.5 w-3.5 text-cyan-600 dark:text-cyan-300" /> : null}
-                </span>
+                {snapToGrid ? <Check className="h-3.5 w-3.5 text-cyan-600 dark:text-cyan-300" /> : null}
               </button>
-              <button
-                type="button"
-                data-testid="toolbar-view-lanes"
-                onClick={() => runMenuAction(onToggleSwimlanes, viewDetailsRef)}
-                className="menu-item justify-between"
-                aria-pressed={showSwimlanes}
-              >
-                <span>Lanes</span>
-                <span className="flex items-center gap-1">
-                  <span className="ui-kbd-hint">L</span>
+              {enableSwimlaneToggle ? (
+                <button
+                  type="button"
+                  data-testid="toolbar-view-lanes"
+                  onClick={() => runMenuAction(onToggleSwimlanes, viewDetailsRef)}
+                  className="menu-item justify-between"
+                  aria-pressed={showSwimlanes}
+                >
+                  <span>Lanes</span>
                   {showSwimlanes ? <Check className="h-3.5 w-3.5 text-cyan-600 dark:text-cyan-300" /> : null}
-                </span>
-              </button>
+                </button>
+              ) : null}
               <button
                 type="button"
                 data-testid="toolbar-view-handles"
@@ -418,10 +388,7 @@ const TopBar: React.FC<TopBarProps> = ({
                 aria-pressed={showPorts}
               >
                 <span>Handles on hover</span>
-                <span className="flex items-center gap-1">
-                  <span className="ui-kbd-hint">P</span>
-                  {showPorts ? <Check className="h-3.5 w-3.5 text-cyan-600 dark:text-cyan-300" /> : null}
-                </span>
+                {showPorts ? <Check className="h-3.5 w-3.5 text-cyan-600 dark:text-cyan-300" /> : null}
               </button>
               <button
                 type="button"
@@ -433,7 +400,8 @@ const TopBar: React.FC<TopBarProps> = ({
                 <span>Minimap</span>
                 {showMinimap ? <Check className="h-3.5 w-3.5 text-cyan-600 dark:text-cyan-300" /> : null}
               </button>
-              <div className="my-1 border-t border-slate-200/75 dark:border-slate-700/75" />
+              <div className="menu-divider-soft" />
+              <div className="menu-section-label">Camera</div>
               <button
                 type="button"
                 data-testid="toolbar-view-zoom-out"
@@ -443,7 +411,6 @@ const TopBar: React.FC<TopBarProps> = ({
                 <span className="inline-flex items-center gap-1.5">
                   <ZoomOut className="h-3.5 w-3.5" /> Zoom out
                 </span>
-                <span className="ui-kbd-hint">-</span>
               </button>
               <button
                 type="button"
@@ -454,7 +421,6 @@ const TopBar: React.FC<TopBarProps> = ({
                 <span className="inline-flex items-center gap-1.5">
                   <ZoomIn className="h-3.5 w-3.5" /> Zoom in
                 </span>
-                <span className="ui-kbd-hint">+</span>
               </button>
               <button
                 type="button"
@@ -474,10 +440,6 @@ const TopBar: React.FC<TopBarProps> = ({
                 <Crosshair className="h-3.5 w-3.5" />
                 Center diagram
               </button>
-              <button type="button" onClick={() => runMenuAction(onToggleTheme, viewDetailsRef)} className="menu-item">
-                {isDarkMode ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
-                {isDarkMode ? 'Light theme' : 'Dark theme'}
-              </button>
             </div>
           </details>
 
@@ -490,7 +452,6 @@ const TopBar: React.FC<TopBarProps> = ({
             aria-label="Open command palette"
           >
             <Command className="h-3.5 w-3.5" />
-            <span className="hidden md:inline">Command</span>
           </button>
 
           <button
@@ -502,8 +463,32 @@ const TopBar: React.FC<TopBarProps> = ({
             aria-label="Open quick start help"
           >
             <HelpCircle className="h-3.5 w-3.5" />
-            <span className="hidden md:inline">Help</span>
           </button>
+
+          <button
+            type="button"
+            onClick={onToggleTheme}
+            className={`${actionButton(isDarkMode)} !px-2`}
+            title={isDarkMode ? 'Switch to light theme' : 'Switch to dark theme'}
+            aria-label={isDarkMode ? 'Switch to light theme' : 'Switch to dark theme'}
+          >
+            {isDarkMode ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
+          </button>
+
+          <FunctionToolbar
+            recentWorkspaces={recentWorkspaces}
+            feedbackHref={feedbackHref}
+            onRestoreRecovery={onRestoreRecovery}
+            onCreateWorkspace={onCreateWorkspace}
+            onOpenWorkspace={onOpenWorkspace}
+            onInsertStarterTemplate={onInsertStarterTemplate}
+            onResetCanvas={onResetCanvas}
+            onImportDiagram={onImportDiagram}
+            onExportDiagram={onExportDiagram}
+            onExportSvg={onExportSvg}
+            onExportPng={onExportPng}
+            onExportPdf={onExportPdf}
+          />
         </div>
       </div>
 

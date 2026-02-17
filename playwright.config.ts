@@ -2,6 +2,7 @@ import { defineConfig } from '@playwright/test';
 
 const playwrightPort = Number(process.env.PW_PORT || 4173);
 const playwrightHost = `http://127.0.0.1:${playwrightPort}`;
+const reuseExistingServer = process.env.PW_REUSE_SERVER === '1';
 
 export default defineConfig({
   testDir: './e2e',
@@ -17,8 +18,8 @@ export default defineConfig({
   webServer: {
     command: `npm run dev -- --port ${playwrightPort}`,
     url: playwrightHost,
-    // CI remains strict; local runs can reuse an already-running server.
-    reuseExistingServer: !process.env.CI,
+    // Deterministic by default; opt-in reuse only with PW_REUSE_SERVER=1.
+    reuseExistingServer,
     timeout: 120_000
   }
 });

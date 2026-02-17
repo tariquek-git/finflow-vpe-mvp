@@ -34,7 +34,16 @@ Move from local-only release flow to hosted public release without changing MVP 
 4. Set env for preview and production:
    - `VITE_ENABLE_AI=false`
    - `VITE_FEEDBACK_URL=mailto:feedback@finflow.app`
+   - `VITE_ENABLE_CLOUD_SYNC=false` (set `true` after Supabase migration)
+   - `VITE_SUPABASE_URL=<project-url>` (required when cloud sync is on)
+   - `VITE_SUPABASE_ANON_KEY=<anon-key>` (required when cloud sync is on)
 5. Deploy preview and production builds.
+
+## Supabase Steps (When Cloud Sync Is Enabled)
+1. Apply migration SQL:
+   - `supabase/migrations/20260216_001_init_workspaces.sql`
+2. Verify RLS policy behavior (users can only read/write their own rows).
+3. Enable `VITE_ENABLE_CLOUD_SYNC=true` in Preview first, then Production.
 
 ## Tagging Policy for Hosted Launch
 - Do not use `v0.1.2` for hosted launch.

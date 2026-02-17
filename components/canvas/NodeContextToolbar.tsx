@@ -34,6 +34,7 @@ const NodeContextToolbar: React.FC<NodeContextToolbarProps> = ({
     };
     const onWindowKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        event.preventDefault();
         setIsMenuOpen(false);
       }
     };
@@ -51,6 +52,7 @@ const NodeContextToolbar: React.FC<NodeContextToolbarProps> = ({
   return (
     <div
       ref={rootRef}
+      data-canvas-interactive="true"
       data-testid="node-context-toolbar"
       className="ff-node-toolbar"
       style={{

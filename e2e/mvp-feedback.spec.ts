@@ -1,7 +1,27 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+
+const openFileMenu = async (page: Page) => {
+  const strip = page.getByTestId('primary-actions-strip').first();
+  const menu = strip.getByTestId('toolbar-file-menu');
+  if (await menu.isVisible()) {
+    return menu;
+  }
+  const trigger = strip.getByTestId('toolbar-file-trigger');
+  await trigger.click();
+  try {
+    await expect(menu).toBeVisible({ timeout: 1000 });
+  } catch {
+    await trigger.click();
+  }
+  await expect(menu).toBeVisible();
+  return menu;
+};
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => window.localStorage.clear());
+  await page.addInitScript(() => {
+    window.sessionStorage.clear();
+    window.localStorage.clear();
+  });
   await page.goto('/');
   await page.waitForLoadState('networkidle');
 });
@@ -12,13 +32,15 @@ test('public MVP hides AI generate controls by default', async ({ page }) => {
 });
 
 test('restore without backup shows non-blocking guidance toast', async ({ page }) => {
-  await page.getByTestId('toolbar-restore').click();
+  const menu = await openFileMenu(page);
+  await menu.getByTestId('toolbar-restore').click();
   await expect(page.getByTestId('toast-message').first()).toContainText('No recovery snapshot yet');
 });
 
 test('invalid import shows non-blocking error toast', async ({ page }) => {
   const fileChooserPromise = page.waitForEvent('filechooser');
-  await page.getByRole('button', { name: /Import JSON/i }).click();
+  const menu = await openFileMenu(page);
+  await menu.getByTestId('toolbar-import-json').click();
   const fileChooser = await fileChooserPromise;
 
   await fileChooser.setFiles({
@@ -33,7 +55,7 @@ test('invalid import shows non-blocking error toast', async ({ page }) => {
 test('export shows success toast', async ({ page }) => {
   await Promise.all([
     page.waitForEvent('download'),
-    page.getByRole('button', { name: /Export JSON/i }).click()
+    (await openFileMenu(page)).getByTestId('toolbar-export-json').click()
   ]);
 
   await expect(page.getByTestId('toast-message').filter({ hasText: 'Diagram exported successfully.' })).toBeVisible();
@@ -41,17 +63,18 @@ test('export shows success toast', async ({ page }) => {
 
 test('reset shows success toast after backup save', async ({ page }) => {
   page.once('dialog', (dialog) => dialog.accept());
-  await page.getByTestId('toolbar-reset-canvas').click();
+  const menu = await openFileMenu(page);
+  await menu.getByTestId('toolbar-reset-canvas').click();
 
   await expect(
-    page.getByTestId('toast-message').filter({ hasText: 'Canvas reset to starter template. Backup saved.' })
+    page.getByTestId('toast-message').filter({ hasText: 'Canvas reset to blank. Backup saved.' })
   ).toBeVisible();
 });
 
 test('import valid JSON shows success toast', async ({ page }) => {
   const [download] = await Promise.all([
     page.waitForEvent('download'),
-    page.getByRole('button', { name: /Export JSON/i }).click()
+    (await openFileMenu(page)).getByTestId('toolbar-export-json').click()
   ]);
   const stream = await download.createReadStream();
   if (!stream) throw new Error('Could not read download stream');
@@ -63,7 +86,8 @@ test('import valid JSON shows success toast', async ({ page }) => {
   const exportedJson = Buffer.concat(chunks).toString('utf8');
 
   const fileChooserPromise = page.waitForEvent('filechooser');
-  await page.getByRole('button', { name: /Import JSON/i }).click();
+  const menu = await openFileMenu(page);
+  await menu.getByTestId('toolbar-import-json').click();
   const fileChooser = await fileChooserPromise;
   await fileChooser.setFiles({
     name: 'valid-finflow-export.json',

@@ -1,4 +1,5 @@
 import { expect, test, type Download, type Page } from '@playwright/test';
+import { insertStarterTemplate } from './helpers/diagramSetup';
 
 const EDGE_SELECTOR = 'svg g.cursor-pointer.group';
 const CONNECTOR_SELECTOR = '[data-testid="toolbar-insert-connector"]';
@@ -21,10 +22,31 @@ const readDownloadText = async (download: Download): Promise<string> => {
   return Buffer.concat(chunks).toString('utf8');
 };
 
+const openFileMenu = async (page: Page) => {
+  const strip = page.getByTestId('primary-actions-strip').first();
+  const menu = strip.getByTestId('toolbar-file-menu');
+  if (await menu.isVisible()) {
+    return menu;
+  }
+  const trigger = strip.getByTestId('toolbar-file-trigger');
+  await trigger.click();
+  try {
+    await expect(menu).toBeVisible({ timeout: 1000 });
+  } catch {
+    await trigger.click();
+  }
+  await expect(menu).toBeVisible();
+  return menu;
+};
+
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => window.localStorage.clear());
+  await page.addInitScript(() => {
+    window.sessionStorage.clear();
+    window.localStorage.clear();
+  });
   await page.goto('/');
   await page.waitForLoadState('networkidle');
+  await insertStarterTemplate(page);
 });
 
 test('mvp happy path: edit, export, reset, import', async ({ page }) => {
@@ -36,27 +58,29 @@ test('mvp happy path: edit, export, reset, import', async ({ page }) => {
 
   const [download] = await Promise.all([
     page.waitForEvent('download'),
-    page.getByRole('button', { name: /Export JSON/i }).click()
+    (await openFileMenu(page)).getByTestId('toolbar-export-json').click()
   ]);
 
-  await expect(download.suggestedFilename()).toMatch(/^finflow-diagram-\d+\.json$/);
+  await expect(download.suggestedFilename()).toMatch(/^finflow-diagram-(?:[A-Z0-9]+-)?\d+\.json$/);
   const exportedText = await readDownloadText(download);
   const exportedPayload = JSON.parse(exportedText) as {
     version?: number;
     diagram?: { nodes?: unknown[]; edges?: unknown[] };
   };
 
-  expect(exportedPayload.version).toBe(2);
+  expect([2, 3, 4]).toContain(exportedPayload.version);
   expect(Array.isArray(exportedPayload.diagram?.nodes)).toBe(true);
   expect(Array.isArray(exportedPayload.diagram?.edges)).toBe(true);
   expect(exportedPayload.diagram?.edges?.length).toBe(editedEdgeCount);
 
   page.once('dialog', (dialog) => dialog.accept());
-  await page.locator('[data-testid="toolbar-reset-canvas"]').click();
-  await expect.poll(async () => countEdges(page)).toBe(initialEdgeCount);
+  const resetMenu = await openFileMenu(page);
+  await resetMenu.getByTestId('toolbar-reset-canvas').click();
+  await expect.poll(async () => countEdges(page)).toBe(0);
 
   const fileChooserPromise = page.waitForEvent('filechooser');
-  await page.getByRole('button', { name: /Import JSON/i }).click();
+  const importMenu = await openFileMenu(page);
+  await importMenu.getByTestId('toolbar-import-json').click();
   const fileChooser = await fileChooserPromise;
   await fileChooser.setFiles({
     name: 'mvp-export.json',

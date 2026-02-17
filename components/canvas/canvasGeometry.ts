@@ -6,7 +6,7 @@ export const NODE_WIDTH = 180;
 export const NODE_HEIGHT = 60;
 export const ANCHOR_SIZE = 16;
 export const SWIMLANE_HEIGHT = 300;
-export const SWIMLANE_HEADER_HEIGHT = 38;
+export const SWIMLANE_HEADER_HEIGHT = 34;
 export const SWIMLANE_PADDING_Y = 14;
 
 export const getHandlePosition = (portIdx: number): RFPosition => {

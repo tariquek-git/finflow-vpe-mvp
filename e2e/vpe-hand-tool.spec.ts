@@ -4,7 +4,10 @@ const CANVAS_SELECTOR = '[data-testid="canvas-dropzone"]';
 const WORLD_LAYER_SELECTOR = `${CANVAS_SELECTOR} div.absolute.inset-0`;
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => window.localStorage.clear());
+  await page.addInitScript(() => {
+    window.sessionStorage.clear();
+    window.localStorage.clear();
+  });
   await page.goto('/');
   await page.waitForLoadState('networkidle');
 });

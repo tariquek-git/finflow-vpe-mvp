@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import { insertStarterTemplate } from './helpers/diagramSetup';
 
 const clickNodeByLabel = async (page: Page, label: string) => {
   const locator = page.locator('div.group.absolute').filter({ hasText: label }).first();
@@ -11,9 +12,13 @@ const clickNodeByLabel = async (page: Page, label: string) => {
 };
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => window.localStorage.clear());
+  await page.addInitScript(() => {
+    window.sessionStorage.clear();
+    window.localStorage.clear();
+  });
   await page.goto('/');
   await page.waitForLoadState('networkidle');
+  await insertStarterTemplate(page);
 });
 
 test('editor has no critical accessibility violations', async ({ page }) => {
@@ -67,9 +72,10 @@ test('primary controls expose accessible names', async ({ page }) => {
 test('toolbar help control is keyboard focusable with visible focus state', async ({ page }) => {
   const helpButton = page.getByTestId('toolbar-help-open');
   await expect(helpButton).toBeVisible();
+  await page.getByTestId('canvas-dropzone').click({ position: { x: 24, y: 24 } });
 
   let focused = false;
-  for (let idx = 0; idx < 30; idx += 1) {
+  for (let idx = 0; idx < 60; idx += 1) {
     await page.keyboard.press('Tab');
     if (await helpButton.evaluate((node) => node === document.activeElement)) {
       focused = true;

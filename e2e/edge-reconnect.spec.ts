@@ -77,7 +77,10 @@ const getEdgeScreenPoint = async (page: Page, edgeId: string, ratio = 0.5) =>
   );
 
 test('selected edge endpoint can be reconnected to a new target port', async ({ page }) => {
-  await page.addInitScript(() => window.localStorage.clear());
+  await page.addInitScript(() => {
+    window.sessionStorage.clear();
+    window.localStorage.clear();
+  });
   await page.goto('/');
   await page.waitForLoadState('networkidle');
   await insertStarterTemplate(page);
@@ -100,6 +103,7 @@ test('clicking overlapping edge area keeps reconnect selection actionable', asyn
   const nowIso = new Date().toISOString();
   await page.addInitScript(
     ({ wsId, timestamp }) => {
+      window.sessionStorage.clear();
       window.localStorage.clear();
       const snapshot = {
         schemaVersion: 2,
@@ -173,11 +177,11 @@ test('clicking overlapping edge area keeps reconnect selection actionable', asyn
           lastOpenedAt: timestamp
         }
       ];
-      window.localStorage.setItem('fof:workspaces:index', JSON.stringify(workspaceSummary));
-      window.localStorage.setItem('fof:active-workspace-id', wsId);
-      window.localStorage.setItem(`fof:workspace:${wsId}`, JSON.stringify(snapshot));
-      window.localStorage.setItem(`fof:workspace:${wsId}:layout`, JSON.stringify(layout));
-      window.localStorage.setItem('finflow-builder.quickstart.dismissed.v1', 'true');
+      window.sessionStorage.setItem('fof:workspaces:index', JSON.stringify(workspaceSummary));
+      window.sessionStorage.setItem('fof:active-workspace-id', wsId);
+      window.sessionStorage.setItem(`fof:workspace:${wsId}`, JSON.stringify(snapshot));
+      window.sessionStorage.setItem(`fof:workspace:${wsId}:layout`, JSON.stringify(layout));
+      window.sessionStorage.setItem('finflow-builder.quickstart.dismissed.v1', 'true');
     },
     { wsId: workspaceId, timestamp: nowIso }
   );

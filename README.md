@@ -14,6 +14,7 @@ Canonical MVP scope and acceptance criteria live in `MVP_DEFINITION.md`.
 Notes:
 - Public MVP ships with AI disabled by default (`VITE_ENABLE_AI=false`).
 - Core editor works without any API key.
+- Storage for this MVP is **session-only**: your work autosaves while the tab is open (including reloads), but closing the tab/browser clears it unless you exported JSON.
 - For local AI-only experiments, set:
   - `VITE_ENABLE_AI=true`
   - `VITE_GEMINI_API_KEY=<key>`
@@ -60,6 +61,7 @@ Full gate (all e2e suites):
 - Preview deploys: enabled for PRs
 - Env defaults (preview + production):
   - `VITE_ENABLE_AI=false`
+  - `VITE_ENABLE_CLOUD_SYNC=false` (default off until Supabase is configured)
 
 ## Launch Operations
 
@@ -69,3 +71,4 @@ Full gate (all e2e suites):
 - Local pilot log template: `docs/LOCAL_PILOT_SESSION_LOG.csv`
 - Hosted migration checklist: `docs/HOSTED_MIGRATION_CHECKLIST.md`
 - Vercel setup guide: `docs/VERCEL_SETUP.md`
+- Supabase setup guide: `docs/SUPABASE_SETUP.md`

@@ -78,11 +78,20 @@ const openFileMenu = async (page: Page) => {
   return menu;
 };
 
+const insertStarterTemplate = async (page: Page) => {
+  const menu = await openFileMenu(page);
+  await menu.getByTestId('toolbar-insert-starter-template').click();
+  await expect(page.locator('[data-node-id="starter-sponsor"]')).toBeVisible();
+  await expect(page.locator('[data-node-id="starter-processor"]')).toBeVisible();
+  await expect(page.locator('[data-node-id="starter-network"]')).toBeVisible();
+};
+
 const panCanvas = async (page: Page) => {
   const canvas = page.locator(CANVAS_SELECTOR);
   const box = await canvas.boundingBox();
   if (!box) throw new Error('Canvas not found.');
 
+  await canvas.click({ position: { x: 24, y: 24 } });
   await page.keyboard.down('Space');
   await page.mouse.move(box.x + 320, box.y + 220);
   await page.mouse.down();
@@ -104,21 +113,21 @@ const exportDiagramText = async (page: Page) => {
         }
       };
 
-      const activeWorkspaceId = window.localStorage.getItem('fof:active-workspace-id') || '';
+      const activeWorkspaceId = window.sessionStorage.getItem('fof:active-workspace-id') || '';
       const workspaceDiagramKey = activeWorkspaceId ? `fof:workspace:${activeWorkspaceId}` : '';
       const fallbackDiagramKeys = [workspaceDiagramKey, 'finflow-builder.diagram.v1'].filter(Boolean);
 
       for (const key of fallbackDiagramKeys) {
-        const parsed = parseJson(window.localStorage.getItem(key));
+        const parsed = parseJson(window.sessionStorage.getItem(key));
         const edges = parsed?.edges;
         if (Array.isArray(edges)) return edges.length;
       }
 
-      for (let index = 0; index < window.localStorage.length; index += 1) {
-        const key = window.localStorage.key(index) || '';
+      for (let index = 0; index < window.sessionStorage.length; index += 1) {
+        const key = window.sessionStorage.key(index) || '';
         if (!key.startsWith('fof:workspace:')) continue;
         if (key.includes(':layout') || key.includes(':recovery') || key.includes(':backup')) continue;
-        const parsed = parseJson(window.localStorage.getItem(key));
+        const parsed = parseJson(window.sessionStorage.getItem(key));
         const edges = parsed?.edges;
         if (Array.isArray(edges)) return edges.length;
       }
@@ -137,20 +146,20 @@ const exportDiagramText = async (page: Page) => {
       }
     };
 
-    const activeWorkspaceId = window.localStorage.getItem('fof:active-workspace-id') || '';
+    const activeWorkspaceId = window.sessionStorage.getItem('fof:active-workspace-id') || '';
     const workspaceDiagramKey = activeWorkspaceId ? `fof:workspace:${activeWorkspaceId}` : '';
     const workspaceLayoutKey = activeWorkspaceId ? `fof:workspace:${activeWorkspaceId}:layout` : '';
 
     let diagram =
-      parseJson(window.localStorage.getItem(workspaceDiagramKey)) ||
-      parseJson(window.localStorage.getItem('finflow-builder.diagram.v1'));
+      parseJson(window.sessionStorage.getItem(workspaceDiagramKey)) ||
+      parseJson(window.sessionStorage.getItem('finflow-builder.diagram.v1'));
 
     if (!diagram) {
-      for (let index = 0; index < window.localStorage.length; index += 1) {
-        const key = window.localStorage.key(index) || '';
+      for (let index = 0; index < window.sessionStorage.length; index += 1) {
+        const key = window.sessionStorage.key(index) || '';
         if (!key.startsWith('fof:workspace:')) continue;
         if (key.includes(':layout') || key.includes(':recovery') || key.includes(':backup')) continue;
-        const parsed = parseJson(window.localStorage.getItem(key));
+        const parsed = parseJson(window.sessionStorage.getItem(key));
         if (parsed && Array.isArray(parsed.nodes) && Array.isArray(parsed.edges)) {
           diagram = parsed;
           break;
@@ -159,8 +168,8 @@ const exportDiagramText = async (page: Page) => {
     }
 
     const layout =
-      parseJson(window.localStorage.getItem(workspaceLayoutKey)) ||
-      parseJson(window.localStorage.getItem('finflow-builder.layout.v1')) ||
+      parseJson(window.sessionStorage.getItem(workspaceLayoutKey)) ||
+      parseJson(window.sessionStorage.getItem('finflow-builder.layout.v1')) ||
       {};
 
     const normalizedDiagram =
@@ -184,7 +193,7 @@ const waitForEdgeNotesInStorage = async (page: Page, expectedNotes: string) => {
           }
         };
 
-        const activeWorkspaceId = window.localStorage.getItem('fof:active-workspace-id') || '';
+        const activeWorkspaceId = window.sessionStorage.getItem('fof:active-workspace-id') || '';
         const workspaceDiagramKey = activeWorkspaceId ? `fof:workspace:${activeWorkspaceId}` : '';
         const fallbackDiagramKeys = [workspaceDiagramKey, 'finflow-builder.diagram.v1'].filter(Boolean);
 
@@ -201,14 +210,14 @@ const waitForEdgeNotesInStorage = async (page: Page, expectedNotes: string) => {
         };
 
         for (const key of fallbackDiagramKeys) {
-          if (hasNotes(parseJson(window.localStorage.getItem(key)))) return true;
+          if (hasNotes(parseJson(window.sessionStorage.getItem(key)))) return true;
         }
 
-        for (let index = 0; index < window.localStorage.length; index += 1) {
-          const key = window.localStorage.key(index) || '';
+        for (let index = 0; index < window.sessionStorage.length; index += 1) {
+          const key = window.sessionStorage.key(index) || '';
           if (!key.startsWith('fof:workspace:')) continue;
           if (key.includes(':layout') || key.includes(':recovery') || key.includes(':backup')) continue;
-          if (hasNotes(parseJson(window.localStorage.getItem(key)))) return true;
+          if (hasNotes(parseJson(window.sessionStorage.getItem(key)))) return true;
         }
 
         return false;
@@ -227,9 +236,13 @@ const importDiagramText = async (page: Page, jsonText: string) => {
 };
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => window.localStorage.clear());
+  await page.addInitScript(() => {
+    window.sessionStorage.clear();
+    window.localStorage.clear();
+  });
   await page.goto('/');
   await page.waitForLoadState('networkidle');
+  await insertStarterTemplate(page);
 });
 
 test('connect tool: node-body click path creates an edge', async ({ page }) => {
@@ -295,12 +308,7 @@ test('edge interactions remain reachable after reset, import, and pan', async ({
   page.once('dialog', (dialog) => dialog.accept());
   const menu = await openFileMenu(page);
   await menu.getByTestId('toolbar-reset-canvas').click();
-  await expect.poll(async () => countEdges(page)).toBe(baseline);
-
-  await page.getByTestId('bottom-tool-dock').getByLabel('Connect tool').click();
-  await page.getByTestId('node-port-starter-sponsor-1').click();
-  await page.getByTestId('node-port-starter-network-3').click();
-  await expect.poll(async () => countEdges(page)).toBe(baseline + 1);
+  await expect.poll(async () => countEdges(page)).toBe(0);
 
   await importDiagramText(page, exportedText);
   await expect.poll(async () => countEdges(page)).toBe(baseline + 1);
@@ -381,14 +389,16 @@ test('edge style controls remain enabled for selected edge', async ({ page }) =>
   await clickNodeBody(page, 'starter-sponsor');
   await clickNodeBody(page, 'starter-network');
 
-  const dashedButton = page.locator('button[title="dashed line style"]');
-  await expect(dashedButton).toHaveCount(0);
-
   await page.getByTestId('bottom-tool-dock').getByLabel('Select tool').click();
-  await expect(dashedButton).toBeEnabled();
+  await clickEdgeForSelection(page.locator('g[data-edge-id]').last());
 
+  await expect(page.locator('button[title="dashed line style"]')).toHaveCount(0);
+
+  const inspector = page.getByTestId('inspector-scroll-body');
+  const dashedButton = inspector.getByRole('button', { name: 'dashed' });
+  await expect(dashedButton).toBeEnabled();
   await dashedButton.click();
-  await expect(dashedButton).toHaveAttribute('aria-pressed', 'true');
+  await expect(dashedButton).toHaveClass(/is-active/);
 });
 
 test('connect workflow emits no console or page errors', async ({ page }) => {

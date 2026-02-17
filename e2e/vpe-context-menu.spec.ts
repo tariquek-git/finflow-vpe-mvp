@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { insertStarterTemplate } from './helpers/diagramSetup';
 
 const CANVAS_SELECTOR = '[data-testid="canvas-dropzone"]';
 
@@ -24,9 +25,13 @@ const rightClickCanvasBlank = async (
 };
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => window.localStorage.clear());
+  await page.addInitScript(() => {
+    window.sessionStorage.clear();
+    window.localStorage.clear();
+  });
   await page.goto('/');
   await page.waitForLoadState('networkidle');
+  await insertStarterTemplate(page);
 });
 
 test('node context menu supports start connection and duplicate', async ({ page }) => {

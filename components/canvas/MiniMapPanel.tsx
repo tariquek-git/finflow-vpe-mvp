@@ -101,6 +101,7 @@ const MiniMapPanel: React.FC<MiniMapPanelProps> = ({ nodes, viewport, canvasSize
   return (
     <div
       data-testid="canvas-minimap"
+      data-canvas-interactive="true"
       className={`pointer-events-auto absolute bottom-3 right-3 z-30 rounded-2xl border p-2 shadow-md ${
         isDarkMode ? 'border-slate-700 bg-slate-900/92' : 'border-slate-200 bg-white/92'
       }`}

@@ -9,6 +9,12 @@ const openFileMenu = async (page: Page) => {
   return menu;
 };
 
+const insertStarterTemplate = async (page: Page) => {
+  const menu = await openFileMenu(page);
+  await menu.getByTestId('toolbar-insert-starter-template').click();
+  await expect(page.locator('[data-node-id="starter-sponsor"]')).toBeVisible();
+};
+
 const clickNodeByLabel = async (page: Page, label: string) => {
   const node = page.locator(`[data-node-label="${label}"]`).first();
   await expect(node).toBeVisible();
@@ -25,13 +31,17 @@ const clickCanvasBlank = async (page: Page) => {
   if (!box) {
     throw new Error('Canvas bounds unavailable');
   }
-  await page.mouse.click(box.x + box.width - 40, box.y + box.height - 40);
+  await page.mouse.click(box.x + box.width * 0.5, box.y + 24);
 };
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => window.localStorage.clear());
+  await page.addInitScript(() => {
+    window.sessionStorage.clear();
+    window.localStorage.clear();
+  });
   await page.goto('/');
   await page.waitForLoadState('networkidle');
+  await insertStarterTemplate(page);
 });
 
 test('menus open and close reliably by outside click and escape', async ({ page }) => {
@@ -65,18 +75,14 @@ test('connect pending state cancels by click-off', async ({ page }) => {
   await expect(page.getByTestId('cancel-pending-connection')).toHaveCount(0);
 });
 
-test('port hit area does not trap clicks when connect tool is off', async ({ page }) => {
+test('port clicks in select mode arm and cancel direct connection predictably', async ({ page }) => {
   await page.getByLabel('Select tool').click();
+  await clickNodeByLabel(page, 'Sponsor Bank');
+  const sourceHandle = page.getByTestId('node-port-starter-sponsor-1');
+  await expect(sourceHandle).toBeVisible();
+  await sourceHandle.click();
+  await expect(page.getByTestId('cancel-pending-connection')).toBeVisible();
 
-  const node = page.locator('[data-node-label="Sponsor Bank"]').first();
-  await expect(node).toBeVisible();
-  const box = await node.boundingBox();
-  if (!box) {
-    throw new Error('Sponsor Bank bounds unavailable');
-  }
-
-  // Click near the top edge where a handle appears on hover.
-  await page.mouse.move(box.x + box.width / 2, box.y + 2);
-  await page.mouse.click(box.x + box.width / 2, box.y + 2);
-  await expect(page.getByTestId('inspector-mode-title')).toContainText('Node');
+  await clickCanvasBlank(page);
+  await expect(page.getByTestId('cancel-pending-connection')).toHaveCount(0);
 });

@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf';
 import { toPng, toSvg } from 'html-to-image';
 import { EntityType, Node, NodeShape } from '../types';
+import { resolveNodeScale, resolveNodeShape } from './nodeDisplay';
 
 const EXPORT_PADDING = 120;
 const DEFAULT_VIEWPORT = { minX: -400, minY: -260, maxX: 1200, maxY: 860 };
@@ -10,10 +11,48 @@ const getNodeDimensions = (node: Node): { width: number; height: number } => {
     return { width: 16, height: 16 };
   }
 
-  const width =
-    node.width || (node.shape === NodeShape.CIRCLE ? 80 : node.shape === NodeShape.DIAMOND ? 100 : 180);
-  const height =
-    node.height || (node.shape === NodeShape.CIRCLE ? 80 : node.shape === NodeShape.DIAMOND ? 100 : 60);
+  const shape = resolveNodeShape(node);
+  const scale = resolveNodeScale(node);
+  const defaultWidth =
+    shape === NodeShape.CIRCLE
+      ? 88
+      : shape === NodeShape.SQUARE
+        ? 92
+        : shape === NodeShape.DIAMOND
+          ? 108
+          : shape === NodeShape.PILL
+            ? 212
+            : shape === NodeShape.ROUNDED_RECTANGLE
+              ? 188
+              : shape === NodeShape.CYLINDER
+                ? 190
+                : 180;
+  const defaultHeight =
+    shape === NodeShape.CIRCLE
+      ? 88
+      : shape === NodeShape.SQUARE
+        ? 92
+        : shape === NodeShape.DIAMOND
+          ? 108
+          : shape === NodeShape.PILL
+            ? 64
+            : shape === NodeShape.ROUNDED_RECTANGLE
+              ? 68
+              : shape === NodeShape.CYLINDER
+                ? 72
+                : 60;
+
+  let width = node.width || defaultWidth;
+  let height = node.height || defaultHeight;
+
+  if (shape === NodeShape.SQUARE || shape === NodeShape.CIRCLE) {
+    const side = Math.max(width, height);
+    width = side;
+    height = side;
+  }
+
+  width = Math.round(width * scale);
+  height = Math.round(height * scale);
   return { width, height };
 };
 
@@ -138,7 +177,13 @@ const downloadDataUrl = (dataUrl: string, filename: string) => {
   const anchor = document.createElement('a');
   anchor.href = dataUrl;
   anchor.download = filename;
+  anchor.style.position = 'fixed';
+  anchor.style.left = '-9999px';
+  document.body.appendChild(anchor);
   anchor.click();
+  window.setTimeout(() => {
+    anchor.remove();
+  }, 0);
 };
 
 export const downloadPngExport = async (

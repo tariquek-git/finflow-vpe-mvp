@@ -3,7 +3,10 @@ import { expect, test } from '@playwright/test';
 test('help control reopens quick start after dismissal while dismissal persists across reload', async ({ page }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
-  await page.evaluate(() => window.localStorage.clear());
+  await page.evaluate(() => {
+    window.sessionStorage.clear();
+    window.localStorage.clear();
+  });
   await page.reload();
   await page.waitForLoadState('networkidle');
 

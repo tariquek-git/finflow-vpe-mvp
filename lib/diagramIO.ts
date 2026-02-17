@@ -525,7 +525,7 @@ const safeJsonParse = (raw: string): unknown => {
 
 export const hasStorageValue = (storageKey: string): boolean => {
   try {
-    return localStorage.getItem(storageKey) !== null;
+    return sessionStorage.getItem(storageKey) !== null;
   } catch {
     return false;
   }
@@ -540,7 +540,7 @@ type DiagramBackupEntry = {
 
 const readBackupEntries = (storageKey: string): DiagramBackupEntry[] => {
   try {
-    const raw = localStorage.getItem(backupStorageKeyFor(storageKey));
+    const raw = sessionStorage.getItem(backupStorageKeyFor(storageKey));
     if (!raw) return [];
     const parsed = safeJsonParse(raw);
     if (!Array.isArray(parsed)) return [];
@@ -563,7 +563,7 @@ const readBackupEntries = (storageKey: string): DiagramBackupEntry[] => {
 
 const writeBackupEntries = (storageKey: string, entries: DiagramBackupEntry[]): boolean => {
   try {
-    localStorage.setItem(backupStorageKeyFor(storageKey), JSON.stringify(entries));
+    sessionStorage.setItem(backupStorageKeyFor(storageKey), JSON.stringify(entries));
     return true;
   } catch {
     return false;
@@ -593,7 +593,7 @@ export const loadLatestDiagramBackup = (
 
 export const loadDiagramFromStorage = (storageKey: string): DiagramSnapshot | null => {
   try {
-    const raw = localStorage.getItem(storageKey);
+    const raw = sessionStorage.getItem(storageKey);
     if (!raw) return null;
 
     const parsed = safeJsonParse(raw);
@@ -610,7 +610,7 @@ export const loadDiagramFromStorage = (storageKey: string): DiagramSnapshot | nu
 
 export const loadLayoutFromStorage = (storageKey: string): Partial<LayoutSettings> | null => {
   try {
-    const raw = localStorage.getItem(storageKey);
+    const raw = sessionStorage.getItem(storageKey);
     if (!raw) return null;
     return sanitizeLayoutSettings(safeJsonParse(raw));
   } catch {
@@ -621,7 +621,7 @@ export const loadLayoutFromStorage = (storageKey: string): Partial<LayoutSetting
 export const persistDiagramToStorage = (storageKey: string, snapshot: DiagramSnapshot): boolean => {
   try {
     const normalized = cloneSnapshot({ ...snapshot, schemaVersion: GRAPH_SCHEMA_VERSION });
-    localStorage.setItem(storageKey, JSON.stringify(normalized));
+    sessionStorage.setItem(storageKey, JSON.stringify(normalized));
     return true;
   } catch {
     return false;
@@ -630,7 +630,7 @@ export const persistDiagramToStorage = (storageKey: string, snapshot: DiagramSna
 
 export const persistLayoutToStorage = (storageKey: string, layout: LayoutSettings): boolean => {
   try {
-    localStorage.setItem(storageKey, JSON.stringify(layout));
+    sessionStorage.setItem(storageKey, JSON.stringify(layout));
     return true;
   } catch {
     return false;

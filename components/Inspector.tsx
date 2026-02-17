@@ -3,28 +3,27 @@ import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
+  EdgeData,
   Edge,
   EntityType,
-  FlowDirection,
-  GridMode,
-  LaneGroupingMode,
+  NodeData,
   Node,
   NodePinnedAttribute,
   NodeShape,
   NODE_ACCOUNT_TYPE_OPTIONS,
-  PaymentRail,
-  ReconciliationMethod
+  PaymentRail
 } from '../types';
-import { MousePointer2, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import NodeInspectorSections from './inspector/NodeInspectorSections';
 import EdgeInspectorSections from './inspector/EdgeInspectorSections';
-import CanvasInspectorSections from './inspector/CanvasInspectorSections';
+import { Button } from './ui/Button';
 import {
   buildDescriptionWithNodeMeta,
   createEmptyNodeMeta,
   parseNodeDescriptionMeta,
   type NodeMetaFields
 } from '../lib/nodeMeta';
+import { sanitizeNotesText } from '../lib/diagramIO';
 import {
   normalizeNodeAccountType,
   resolveNodeBorderStyle,
@@ -40,9 +39,13 @@ interface InspectorProps {
   edges: Edge[];
   selectedNodeId: string | null;
   selectedEdgeId: string | null;
+  selectedSwimlaneId: number | null;
+  swimlaneLabels: string[];
+  swimlaneCollapsedIds: number[];
+  swimlaneLockedIds: number[];
+  swimlaneHiddenIds: number[];
   onUpdateNode: (node: Node) => void;
   onUpdateEdge: (edge: Edge) => void;
-  isDarkMode: boolean;
   onClose: () => void;
   pinnedNodeAttributes: NodePinnedAttribute[];
   onTogglePinnedNodeAttribute: (attribute: NodePinnedAttribute) => void;
@@ -50,15 +53,11 @@ interface InspectorProps {
   onDuplicateSelection: () => void;
   onOpenInsertPanel: () => void;
   onOpenCommandPalette: () => void;
-  gridMode: GridMode;
-  onSetGridMode: (mode: GridMode) => void;
-  showMinimap: boolean;
-  onToggleMinimap: () => void;
-  laneGroupingMode: LaneGroupingMode;
-  onSetLaneGroupingMode: (mode: LaneGroupingMode) => void;
-  swimlaneLabels: string[];
-  onUpdateSwimlaneLabel: (index: number, label: string) => void;
-  onOpenExportMenu: () => void;
+  onSelectSwimlane: (laneId: number | null) => void;
+  onRenameSwimlane: (laneId: number, label: string) => void;
+  onToggleSwimlaneCollapsed: (laneId: number) => void;
+  onToggleSwimlaneLocked: (laneId: number) => void;
+  onToggleSwimlaneHidden: (laneId: number) => void;
 }
 
 const nodeSchema = z.object({
@@ -67,7 +66,7 @@ const nodeSchema = z.object({
   accountType: z.union([z.enum(NODE_ACCOUNT_TYPE_OPTIONS), z.literal('')]).optional(),
   accountDetails: z.string().max(240).optional(),
   description: z.string().max(2000).optional(),
-  notes: z.string().max(10000).optional(),
+  notes: z.string().max(20000).optional(),
   showLabel: z.boolean(),
   showType: z.boolean(),
   showAccount: z.boolean(),
@@ -84,25 +83,128 @@ const nodeSchema = z.object({
   scale: z.number().min(0.6).max(2)
 });
 
+const EDGE_TYPE_OPTIONS = [
+  '',
+  'authorization',
+  'clearing',
+  'settlement',
+  'funding',
+  'fee',
+  'dispute',
+  'refund',
+  'reconciliation',
+  'other'
+] as const;
+
+const EDGE_TIMING_OPTIONS = ['', 'realtime', 'batch', 'T+1', 'T+2', 'other'] as const;
+
 const edgeSchema = z.object({
   label: z.string().trim().max(120),
-  rail: z.nativeEnum(PaymentRail),
-  direction: z.union([z.nativeEnum(FlowDirection), z.literal('')]),
-  timing: z.string().optional(),
-  amount: z.string().optional(),
-  currency: z.string().optional(),
-  sequence: z.number().int().nonnegative(),
-  isFX: z.boolean(),
-  isExceptionPath: z.boolean(),
-  fxPair: z.string().optional(),
-  recoMethod: z.union([z.nativeEnum(ReconciliationMethod), z.literal('')]),
-  dataSchema: z.string().optional(),
-  description: z.string().optional()
+  flowType: z.enum(EDGE_TYPE_OPTIONS),
+  flowTypeCustom: z.string().max(120).optional(),
+  timingPreset: z.enum(EDGE_TIMING_OPTIONS),
+  timingCustom: z.string().max(120).optional(),
+  rail: z.union([z.nativeEnum(PaymentRail), z.literal('')]),
+  railCustom: z.string().max(120).optional(),
+  notes: z.string().max(20000).optional(),
+  style: z.union([z.enum(['solid', 'dashed', 'dotted']), z.literal('solid')]),
+  pathType: z.union([z.enum(['bezier', 'orthogonal']), z.literal('bezier')]),
+  thickness: z.number().min(1).max(6),
+  showArrowHead: z.boolean(),
+  showMidArrow: z.boolean()
 });
 
 type NodeFormValues = z.infer<typeof nodeSchema>;
 type EdgeFormValues = z.infer<typeof edgeSchema>;
-type InspectorTab = 'node' | 'edge' | 'canvas';
+const LANE_NAME_PLACEHOLDER = 'Name this lane';
+
+const normalizeNodeTextToken = (value: string): string =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ');
+
+const normalizeNotesToken = (value: string): string =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[:\-–—.,;!?]+$/g, '');
+
+const normalizeLooseToken = (value: string): string =>
+  normalizeNotesToken(value).replace(/[^a-z0-9]+/g, ' ').trim();
+
+const stripRedundantNotesPrefix = (value: string): string => {
+  let next = value.trim();
+  next = next.replace(/^\s*(type|name)\s*[:\-]\s*/i, '');
+  return next.trim();
+};
+
+const isNearDuplicate = (candidate: string, target: string): boolean => {
+  const looseCandidate = normalizeLooseToken(candidate);
+  const looseTarget = normalizeLooseToken(target);
+  if (!looseCandidate || !looseTarget) return false;
+  if (looseCandidate === looseTarget) return true;
+  if (candidate.trim().length >= 40) return false;
+  const trimmedCandidate = looseCandidate.replace(/^(type|name)\s+/, '').trim();
+  return trimmedCandidate === looseTarget;
+};
+
+const sanitizeNodeNotes = (value: string | undefined, label: string, typeLabel: string): string => {
+  const base = sanitizeNotesText(value);
+  if (!base) return '';
+
+  const cleaned = stripRedundantNotesPrefix(base);
+  const noteToken = normalizeNotesToken(cleaned);
+  if (!noteToken) return '';
+
+  const labelToken = normalizeNotesToken(label);
+  const typeToken = normalizeNotesToken(typeLabel);
+  if (noteToken === labelToken || noteToken === typeToken) return '';
+  if (isNearDuplicate(cleaned, label) || isNearDuplicate(cleaned, typeLabel)) return '';
+  return cleaned;
+};
+
+const resolveNodeIsNameAuto = (node: Node | undefined): boolean => {
+  if (!node) return true;
+  if (typeof node.isNameAuto === 'boolean') return node.isNameAuto;
+  return normalizeNodeTextToken(node.label || node.type) === normalizeNodeTextToken(node.type);
+};
+
+const resolveNodeIdentityState = (
+  selectedNode: Node,
+  formLabel: string,
+  nextType: EntityType
+): { label: string; isNameAuto: boolean } => {
+  const wasAuto = resolveNodeIsNameAuto(selectedNode);
+  const trimmedLabel = formLabel.trim();
+  const hasLabel = trimmedLabel.length > 0;
+  const typeChanged = nextType !== selectedNode.type;
+  const nextTypeToken = normalizeNodeTextToken(nextType);
+  const nextLabelToken = normalizeNodeTextToken(hasLabel ? trimmedLabel : nextType);
+
+  if (!hasLabel) {
+    return { label: nextType, isNameAuto: true };
+  }
+
+  if (typeChanged && wasAuto) {
+    return { label: nextType, isNameAuto: true };
+  }
+
+  if (nextLabelToken === nextTypeToken) {
+    return { label: nextType, isNameAuto: true };
+  }
+
+  return { label: trimmedLabel, isNameAuto: false };
+};
+
+const resolveNodeLabelForForm = (node: Node | undefined): string => {
+  const rawLabel = node?.label || '';
+  const trimmedLabel = rawLabel.trim();
+  if (trimmedLabel.length > 0) return rawLabel;
+  return node?.type || '';
+};
 
 const NODE_FIELD_NAMES: Array<keyof NodeFormValues> = [
   'label',
@@ -129,33 +231,33 @@ const NODE_FIELD_NAMES: Array<keyof NodeFormValues> = [
 
 const EDGE_FIELD_NAMES: Array<keyof EdgeFormValues> = [
   'label',
+  'flowType',
+  'flowTypeCustom',
+  'timingPreset',
+  'timingCustom',
   'rail',
-  'direction',
-  'timing',
-  'amount',
-  'currency',
-  'sequence',
-  'isFX',
-  'isExceptionPath',
-  'fxPair',
-  'recoMethod',
-  'dataSchema',
-  'description'
+  'railCustom',
+  'notes',
+  'style',
+  'pathType',
+  'thickness',
+  'showArrowHead',
+  'showMidArrow'
 ];
 
 const nodeToFormValues = (node: Node | undefined): NodeFormValues => {
   const parsedDescription = parseNodeDescriptionMeta(node?.description);
-  const parsedNotes = parseNodeDescriptionMeta(node?.data?.notes);
   const accountType = normalizeNodeAccountType(node?.data?.accountType, node?.accountType) || '';
+  const label = resolveNodeLabelForForm(node);
+  const typeLabel = node?.type || '';
   return {
-    label: node?.label || '',
-    type: node?.type || '',
+    label,
+    type: typeLabel,
     accountType,
     accountDetails: node?.data?.accountDetails || '',
     description: parsedDescription.notes || '',
-    // Keep documentation notes isolated from description/meta serialization.
-    notes: parsedNotes.notes || '',
-    showLabel: node?.data?.showLabel ?? true,
+    notes: sanitizeNodeNotes(node?.data?.notes, label, typeLabel),
+    showLabel: node?.data?.showLabel ?? false,
     showType: node?.data?.showType ?? true,
     showAccount: node?.data?.showAccount ?? true,
     showAccountDetails: node?.data?.showAccountDetails ?? false,
@@ -174,24 +276,37 @@ const nodeToFormValues = (node: Node | undefined): NodeFormValues => {
 
 const edgeToFormValues = (edge: Edge | undefined): EdgeFormValues => ({
   label: edge?.label || '',
+  flowType: typeof edge?.data?.flowType === 'string' ? ((edge.data?.flowType as EdgeFormValues['flowType']) || '') : '',
+  flowTypeCustom: typeof edge?.data?.flowTypeCustom === 'string' ? edge.data?.flowTypeCustom : '',
+  timingPreset:
+    typeof edge?.data?.timingPreset === 'string'
+      ? (edge.data?.timingPreset as EdgeFormValues['timingPreset'])
+      : edge?.timing === 'realtime' || edge?.timing === 'batch' || edge?.timing === 'T+1' || edge?.timing === 'T+2'
+        ? (edge.timing as EdgeFormValues['timingPreset'])
+        : edge?.timing
+          ? 'other'
+          : '',
+  timingCustom:
+    typeof edge?.data?.timingCustom === 'string'
+      ? edge.data?.timingCustom
+      : edge?.timing &&
+          edge.timing !== 'realtime' &&
+          edge.timing !== 'batch' &&
+          edge.timing !== 'T+1' &&
+          edge.timing !== 'T+2'
+        ? edge.timing
+        : '',
   rail: edge?.rail || PaymentRail.BLANK,
-  direction: edge?.direction || '',
-  timing: edge?.timing || '',
-  amount: edge?.amount || '',
-  currency: edge?.currency || '',
-  sequence: edge?.sequence || 0,
-  isFX: !!edge?.isFX,
-  isExceptionPath: !!edge?.isExceptionPath,
-  fxPair: edge?.fxPair || '',
-  recoMethod: edge?.recoMethod || '',
-  dataSchema: edge?.dataSchema || '',
-  description: edge?.description || ''
+  railCustom: typeof edge?.data?.railCustom === 'string' ? edge.data?.railCustom : '',
+  notes: sanitizeNotesText(edge?.data?.notes),
+  style: edge?.style || 'solid',
+  pathType: edge?.pathType || 'bezier',
+  thickness: edge?.thickness ?? 2,
+  showArrowHead: edge?.showArrowHead ?? true,
+  showMidArrow: edge?.showMidArrow ?? false
 });
 
-const sanitizeNodeNotes = (value: string | undefined): string | undefined => {
-  const parsed = parseNodeDescriptionMeta(value);
-  return parsed.notes || undefined;
-};
+const sanitizeEdgeNotes = (value: string | undefined): string => sanitizeNotesText(value);
 
 const getActiveFieldName = (): string | null => {
   if (typeof document === 'undefined') return null;
@@ -215,9 +330,13 @@ const Inspector: React.FC<InspectorProps> = ({
   edges,
   selectedNodeId,
   selectedEdgeId,
+  selectedSwimlaneId,
+  swimlaneLabels,
+  swimlaneCollapsedIds,
+  swimlaneLockedIds,
+  swimlaneHiddenIds,
   onUpdateNode,
   onUpdateEdge,
-  isDarkMode,
   onClose,
   pinnedNodeAttributes,
   onTogglePinnedNodeAttribute,
@@ -225,79 +344,110 @@ const Inspector: React.FC<InspectorProps> = ({
   onDuplicateSelection,
   onOpenInsertPanel,
   onOpenCommandPalette,
-  gridMode,
-  onSetGridMode,
-  showMinimap,
-  onToggleMinimap,
-  laneGroupingMode,
-  onSetLaneGroupingMode,
-  swimlaneLabels,
-  onUpdateSwimlaneLabel,
-  onOpenExportMenu
+  onSelectSwimlane,
+  onRenameSwimlane,
+  onToggleSwimlaneCollapsed,
+  onToggleSwimlaneLocked,
+  onToggleSwimlaneHidden
 }) => {
   const nodeById = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
+  const edgeById = useMemo(() => new Map(edges.map((edge) => [edge.id, edge])), [edges]);
   const selectedNode = useMemo(() => (selectedNodeId ? nodeById.get(selectedNodeId) : undefined), [nodeById, selectedNodeId]);
+  const selectedNodeIsNameAuto = useMemo(() => resolveNodeIsNameAuto(selectedNode), [selectedNode]);
   const selectedEdge = useMemo(
     () => edges.find((edge) => edge.id === selectedEdgeId),
     [edges, selectedEdgeId]
   );
 
-  const selectionMode: 'node' | 'edge' | 'empty' = selectedEdge ? 'edge' : selectedNode ? 'node' : 'empty';
-  const [activeTab, setActiveTab] = useState<InspectorTab>(selectionMode === 'empty' ? 'canvas' : selectionMode);
+  const selectionMode: 'node' | 'edge' | 'lane' | 'empty' =
+    selectedEdge ? 'edge' : selectedNode ? 'node' : selectedSwimlaneId ? 'lane' : 'empty';
   const [nodeDetailsOpen, setNodeDetailsOpen] = useState(false);
-  const [edgeAdvancedOpen, setEdgeAdvancedOpen] = useState(false);
   const [nodeMeta, setNodeMeta] = useState<NodeMetaFields>(createEmptyNodeMeta());
+  const [laneNameDraft, setLaneNameDraft] = useState('');
+  const laneNameInputRef = useRef<HTMLInputElement | null>(null);
   const scrollBodyRef = useRef<HTMLDivElement>(null);
+  const nodeNotesCommitTimeoutRef = useRef<number | null>(null);
+  const edgeNotesCommitTimeoutRef = useRef<number | null>(null);
+  const lastSelectedNodeIdRef = useRef<string | null>(null);
+  const lastSelectedEdgeIdRef = useRef<string | null>(null);
+  const isHydratingNodeFormRef = useRef(false);
+  const isHydratingEdgeFormRef = useRef(false);
+  const nodeHydrationRafRef = useRef<number | null>(null);
+  const edgeHydrationRafRef = useRef<number | null>(null);
+
+  const selectedSwimlaneLabel = useMemo(() => {
+    if (!selectedSwimlaneId) return '';
+    return swimlaneLabels[selectedSwimlaneId - 1] || '';
+  }, [selectedSwimlaneId, swimlaneLabels]);
+
+  const isSelectedLaneCollapsed = !!selectedSwimlaneId && swimlaneCollapsedIds.includes(selectedSwimlaneId);
+  const isSelectedLaneLocked = !!selectedSwimlaneId && swimlaneLockedIds.includes(selectedSwimlaneId);
+  const isSelectedLaneHidden = !!selectedSwimlaneId && swimlaneHiddenIds.includes(selectedSwimlaneId);
 
   const selectedEdgeEndpoints = useMemo(() => {
     if (!selectedEdge) return '';
     const sourceLabel = nodeById.get(selectedEdge.sourceId)?.label || selectedEdge.sourceId;
     const targetLabel = nodeById.get(selectedEdge.targetId)?.label || selectedEdge.targetId;
-    return `${sourceLabel} -> ${targetLabel}`;
+    return `${sourceLabel} → ${targetLabel}`;
   }, [nodeById, selectedEdge]);
 
-  const contextMeta = useMemo((): { label: string; detail: string } => {
-    if (activeTab === 'canvas') {
+  const modeMeta = useMemo((): { title: string; detail: string } => {
+    if (selectionMode === 'empty') {
       return {
-        label: 'Canvas',
-        detail: 'View and layout configuration'
+        title: 'Nothing selected',
+        detail: 'Select a node or edge to edit properties'
       };
     }
 
     if (selectionMode === 'node') {
       return {
-        label: 'Node',
-        detail: selectedNode ? selectedNode.label : 'No node selected'
+        title: 'Node',
+        detail: selectedNode?.label || 'No node selected'
       };
     }
 
     if (selectionMode === 'edge') {
-      if (!selectedEdge) {
-        return { label: 'Edge', detail: 'No edge selected' };
-      }
       return {
-        label: 'Edge',
+        title: 'Edge',
         detail: selectedEdge.label?.trim() || selectedEdgeEndpoints
       };
     }
 
+    if (selectionMode === 'lane') {
+      return {
+        title: 'Lane',
+        detail: selectedSwimlaneLabel || LANE_NAME_PLACEHOLDER
+      };
+    }
+
     return {
-      label: 'Nothing selected',
+      title: 'Properties',
       detail: 'Select a node or edge to edit properties'
     };
-  }, [activeTab, selectedEdge, selectedEdgeEndpoints, selectedNode, selectionMode]);
+  }, [selectedEdge, selectedEdgeEndpoints, selectedNode, selectedSwimlaneLabel, selectionMode]);
 
   useEffect(() => {
-    if (selectedEdge) {
-      setActiveTab('edge');
+    if (!selectedSwimlaneId) {
+      setLaneNameDraft('');
       return;
     }
-    if (selectedNode) {
-      setActiveTab('node');
-      return;
-    }
-    setActiveTab('canvas');
-  }, [selectedEdge, selectedNode]);
+    setLaneNameDraft(selectedSwimlaneLabel);
+  }, [selectedSwimlaneId, selectedSwimlaneLabel]);
+
+  useEffect(() => {
+    const onFocusLaneName = (event: Event) => {
+      if (!(event instanceof CustomEvent)) return;
+      const detail = event.detail as { laneId?: number } | undefined;
+      if (!detail?.laneId || detail.laneId !== selectedSwimlaneId) return;
+      window.requestAnimationFrame(() => {
+        laneNameInputRef.current?.focus();
+        laneNameInputRef.current?.select();
+      });
+    };
+
+    window.addEventListener('finflow:focus-lane-name', onFocusLaneName);
+    return () => window.removeEventListener('finflow:focus-lane-name', onFocusLaneName);
+  }, [selectedSwimlaneId]);
 
   const nodeForm = useForm<NodeFormValues>({
     resolver: zodResolver(nodeSchema),
@@ -312,7 +462,7 @@ const Inspector: React.FC<InspectorProps> = ({
   });
 
   const watchedNodeValues = useWatch({ control: nodeForm.control });
-  const edgeValues = useWatch({ control: edgeForm.control });
+  const watchedEdgeValues = useWatch({ control: edgeForm.control });
   const nodeValues = useMemo<NodeFormValues>(
     () => ({
       ...nodeToFormValues(selectedNode),
@@ -320,17 +470,71 @@ const Inspector: React.FC<InspectorProps> = ({
     }),
     [selectedNode, watchedNodeValues]
   );
-  const edgeIsFX = edgeForm.watch('isFX');
-  const edgeIsExceptionPath = edgeForm.watch('isExceptionPath');
+  const edgeValues = useMemo<EdgeFormValues>(
+    () => ({
+      ...edgeToFormValues(selectedEdge),
+      ...(watchedEdgeValues as Partial<EdgeFormValues>)
+    }),
+    [selectedEdge, watchedEdgeValues]
+  );
+  const nodeNotesValue = nodeForm.watch('notes');
+  const edgeNotesValue = edgeForm.watch('notes');
+
+  const commitNodeNotes = useCallback(
+    (nodeId: string, value: string | undefined) => {
+      const node = nodeById.get(nodeId);
+      if (!node) return;
+      const nodeLabel = resolveNodeLabelForForm(node);
+      const nodeType = node.type;
+      const nextNotes = sanitizeNodeNotes(value, nodeLabel, nodeType);
+      const previousNotes = sanitizeNodeNotes(node.data?.notes, nodeLabel, nodeType);
+      if (nextNotes === previousNotes) return;
+
+      const nextData: NodeData = {
+        ...(node.data || {}),
+        notes: nextNotes
+      };
+
+      onUpdateNode({
+        ...node,
+        data: nextData
+      });
+    },
+    [nodeById, onUpdateNode]
+  );
+
+  const commitEdgeNotes = useCallback(
+    (edgeId: string, value: string | undefined) => {
+      const edge = edgeById.get(edgeId);
+      if (!edge) return;
+      const nextNotes = sanitizeEdgeNotes(value);
+      const previousNotes = sanitizeEdgeNotes(edge.data?.notes);
+      if (nextNotes === previousNotes) return;
+
+      const nextData: EdgeData = {
+        ...(edge.data || {}),
+        notes: nextNotes
+      };
+
+      onUpdateEdge({
+        ...edge,
+        data: nextData
+      });
+    },
+    [edgeById, onUpdateEdge]
+  );
 
   const handleNodeMetaChange = useCallback((key: keyof NodeMetaFields, value: string) => {
     setNodeMeta((prev) => ({ ...prev, [key]: value }));
   }, []);
 
   const handleResetNodeFields = useCallback(() => {
+    if (selectedNode) {
+      commitNodeNotes(selectedNode.id, nodeForm.getValues('notes'));
+    }
     nodeForm.reset(nodeToFormValues(selectedNode));
     setNodeMeta(parseNodeDescriptionMeta(selectedNode?.description).meta);
-  }, [nodeForm, selectedNode]);
+  }, [commitNodeNotes, nodeForm, selectedNode?.id]);
 
   const handleApplyToSimilarNodes = useCallback(() => {
     if (!selectedNode) return;
@@ -341,11 +545,13 @@ const Inspector: React.FC<InspectorProps> = ({
     const nextDescription = buildDescriptionWithNodeMeta(nodeMeta, next.description || undefined);
     const normalizedAccountType = normalizeNodeAccountType(next.accountType);
     const nextType = next.type || selectedNode.type;
+    const identity = resolveNodeIdentityState(selectedNode, next.label, nextType);
     const nextDisplayStyle = next.displayStyle || resolveNodeDisplayStyle(selectedNode);
     const nextBorderStyle = next.borderStyle || resolveNodeBorderStyle(selectedNode);
 
     const nextNodeData = {
       ...selectedNode.data,
+      isNameAuto: identity.isNameAuto,
       accountType: normalizedAccountType,
       accountDetails: next.accountDetails || undefined,
       showLabel: next.showLabel,
@@ -362,15 +568,15 @@ const Inspector: React.FC<InspectorProps> = ({
       isPhantom: next.isPhantom,
       isLocked: next.isLocked,
       scale: next.scale,
-      notes: sanitizeNodeNotes(next.notes)
+      notes: sanitizeNodeNotes(selectedNode.data?.notes, identity.label, nextType)
     };
 
     const template: Node = {
       ...selectedNode,
-      label: next.label,
+      label: identity.label,
+      isNameAuto: identity.isNameAuto,
       type: nextType,
       shape: next.shape,
-      accountType: normalizedAccountType || undefined,
       description: nextDescription,
       color: next.fillColor || undefined,
       data: nextNodeData
@@ -379,29 +585,165 @@ const Inspector: React.FC<InspectorProps> = ({
   }, [nodeMeta, nodeValues, onApplyNodeTemplateToSimilar, selectedNode]);
 
   const handleResetEdgeFields = useCallback(() => {
+    if (selectedEdge) {
+      commitEdgeNotes(selectedEdge.id, edgeForm.getValues('notes'));
+    }
     edgeForm.reset(edgeToFormValues(selectedEdge));
-  }, [edgeForm, selectedEdge]);
+  }, [commitEdgeNotes, edgeForm, selectedEdge?.id]);
+
+  const handleResetEdgeStyling = useCallback(() => {
+    edgeForm.setValue('style', 'solid', { shouldDirty: true, shouldValidate: true });
+    edgeForm.setValue('pathType', 'bezier', { shouldDirty: true, shouldValidate: true });
+    edgeForm.setValue('thickness', 2, { shouldDirty: true, shouldValidate: true });
+    edgeForm.setValue('showArrowHead', true, { shouldDirty: true, shouldValidate: true });
+    edgeForm.setValue('showMidArrow', false, { shouldDirty: true, shouldValidate: true });
+  }, [edgeForm]);
+
+  const handleNodeNotesBlur = useCallback(() => {
+    if (!selectedNode) return;
+    if (nodeNotesCommitTimeoutRef.current !== null) {
+      window.clearTimeout(nodeNotesCommitTimeoutRef.current);
+      nodeNotesCommitTimeoutRef.current = null;
+    }
+    commitNodeNotes(selectedNode.id, nodeForm.getValues('notes'));
+  }, [commitNodeNotes, nodeForm, selectedNode]);
+
+  const handleEdgeNotesBlur = useCallback(() => {
+    if (!selectedEdge) return;
+    if (edgeNotesCommitTimeoutRef.current !== null) {
+      window.clearTimeout(edgeNotesCommitTimeoutRef.current);
+      edgeNotesCommitTimeoutRef.current = null;
+    }
+    commitEdgeNotes(selectedEdge.id, edgeForm.getValues('notes'));
+  }, [commitEdgeNotes, edgeForm, selectedEdge]);
 
   useEffect(() => {
+    const nextId = selectedNode?.id || null;
+    const previousId = lastSelectedNodeIdRef.current;
+    if (previousId === nextId) return;
+    if (previousId && previousId !== selectedNode?.id) {
+      const activeField = getActiveFieldName();
+      if (activeField === 'notes') {
+        commitNodeNotes(previousId, nodeForm.getValues('notes'));
+      }
+    }
+    if (nodeNotesCommitTimeoutRef.current !== null) {
+      window.clearTimeout(nodeNotesCommitTimeoutRef.current);
+      nodeNotesCommitTimeoutRef.current = null;
+    }
+    if (nodeHydrationRafRef.current !== null) {
+      window.cancelAnimationFrame(nodeHydrationRafRef.current);
+      nodeHydrationRafRef.current = null;
+    }
+    isHydratingNodeFormRef.current = true;
     const fieldToRefocus = pickActiveField(NODE_FIELD_NAMES);
     nodeForm.reset(nodeToFormValues(selectedNode));
     setNodeMeta(parseNodeDescriptionMeta(selectedNode?.description).meta);
-    if (fieldToRefocus && selectedNode) {
-      window.requestAnimationFrame(() => {
+    lastSelectedNodeIdRef.current = nextId;
+    nodeHydrationRafRef.current = window.requestAnimationFrame(() => {
+      isHydratingNodeFormRef.current = false;
+      nodeHydrationRafRef.current = null;
+      if (fieldToRefocus && selectedNode) {
         nodeForm.setFocus(fieldToRefocus);
-      });
-    }
-  }, [selectedNode?.id, nodeForm]);
+      }
+    });
+  }, [commitNodeNotes, nodeForm, selectedNode]);
 
   useEffect(() => {
+    const nextId = selectedEdge?.id || null;
+    const previousId = lastSelectedEdgeIdRef.current;
+    if (previousId === nextId) return;
+    if (previousId && previousId !== selectedEdge?.id) {
+      const activeField = getActiveFieldName();
+      if (activeField === 'notes') {
+        commitEdgeNotes(previousId, edgeForm.getValues('notes'));
+      }
+    }
+    if (edgeNotesCommitTimeoutRef.current !== null) {
+      window.clearTimeout(edgeNotesCommitTimeoutRef.current);
+      edgeNotesCommitTimeoutRef.current = null;
+    }
+    if (edgeHydrationRafRef.current !== null) {
+      window.cancelAnimationFrame(edgeHydrationRafRef.current);
+      edgeHydrationRafRef.current = null;
+    }
+    isHydratingEdgeFormRef.current = true;
     const fieldToRefocus = pickActiveField(EDGE_FIELD_NAMES);
     edgeForm.reset(edgeToFormValues(selectedEdge));
-    if (fieldToRefocus && selectedEdge) {
-      window.requestAnimationFrame(() => {
+    lastSelectedEdgeIdRef.current = nextId;
+    edgeHydrationRafRef.current = window.requestAnimationFrame(() => {
+      isHydratingEdgeFormRef.current = false;
+      edgeHydrationRafRef.current = null;
+      if (fieldToRefocus && selectedEdge) {
         edgeForm.setFocus(fieldToRefocus);
-      });
+      }
+    });
+  }, [commitEdgeNotes, edgeForm, selectedEdge]);
+
+  useEffect(() => {
+    if (!selectedNode) return;
+    const label = resolveNodeLabelForForm(selectedNode);
+    const cleanedNotes = sanitizeNodeNotes(selectedNode.data?.notes, label, selectedNode.type);
+    const currentNotes = sanitizeNotesText(selectedNode.data?.notes);
+    if (cleanedNotes === currentNotes) return;
+    onUpdateNode({
+      ...selectedNode,
+      data: {
+        ...(selectedNode.data || {}),
+        notes: cleanedNotes
+      }
+    });
+  }, [onUpdateNode, selectedNode]);
+
+  useEffect(() => {
+    if (!selectedNode) return;
+    if (nodeNotesCommitTimeoutRef.current !== null) {
+      window.clearTimeout(nodeNotesCommitTimeoutRef.current);
     }
-  }, [selectedEdge?.id, edgeForm]);
+    nodeNotesCommitTimeoutRef.current = window.setTimeout(() => {
+      commitNodeNotes(selectedNode.id, nodeNotesValue);
+    }, 350);
+    return () => {
+      if (nodeNotesCommitTimeoutRef.current !== null) {
+        window.clearTimeout(nodeNotesCommitTimeoutRef.current);
+        nodeNotesCommitTimeoutRef.current = null;
+      }
+    };
+  }, [commitNodeNotes, nodeNotesValue, selectedNode?.id]);
+
+  useEffect(() => {
+    if (!selectedEdge) return;
+    if (edgeNotesCommitTimeoutRef.current !== null) {
+      window.clearTimeout(edgeNotesCommitTimeoutRef.current);
+    }
+    edgeNotesCommitTimeoutRef.current = window.setTimeout(() => {
+      commitEdgeNotes(selectedEdge.id, edgeNotesValue);
+    }, 350);
+    return () => {
+      if (edgeNotesCommitTimeoutRef.current !== null) {
+        window.clearTimeout(edgeNotesCommitTimeoutRef.current);
+        edgeNotesCommitTimeoutRef.current = null;
+      }
+    };
+  }, [commitEdgeNotes, edgeNotesValue, selectedEdge?.id]);
+
+  useEffect(
+    () => () => {
+      if (nodeNotesCommitTimeoutRef.current !== null) {
+        window.clearTimeout(nodeNotesCommitTimeoutRef.current);
+      }
+      if (edgeNotesCommitTimeoutRef.current !== null) {
+        window.clearTimeout(edgeNotesCommitTimeoutRef.current);
+      }
+      if (nodeHydrationRafRef.current !== null) {
+        window.cancelAnimationFrame(nodeHydrationRafRef.current);
+      }
+      if (edgeHydrationRafRef.current !== null) {
+        window.cancelAnimationFrame(edgeHydrationRafRef.current);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     if (!selectedNode) return;
@@ -412,10 +754,12 @@ const Inspector: React.FC<InspectorProps> = ({
     const nextDescription = buildDescriptionWithNodeMeta(nodeMeta, next.description || undefined);
     const normalizedAccountType = normalizeNodeAccountType(next.accountType);
     const nextType = next.type || selectedNode.type;
+    const identity = resolveNodeIdentityState(selectedNode, next.label, nextType);
     const nextDisplayStyle = next.displayStyle || resolveNodeDisplayStyle(selectedNode);
     const nextBorderStyle = next.borderStyle || resolveNodeBorderStyle(selectedNode);
     const nextNodeData = {
       ...selectedNode.data,
+      isNameAuto: identity.isNameAuto,
       accountType: normalizedAccountType,
       accountDetails: next.accountDetails || undefined,
       showLabel: next.showLabel,
@@ -432,31 +776,55 @@ const Inspector: React.FC<InspectorProps> = ({
       isPhantom: next.isPhantom,
       isLocked: next.isLocked,
       scale: next.scale,
-      notes: sanitizeNodeNotes(next.notes)
+      notes: sanitizeNodeNotes(selectedNode.data?.notes, identity.label, nextType)
     };
 
     const nextNode: Node = {
       ...selectedNode,
-      label: next.label,
+      label: identity.label,
+      isNameAuto: identity.isNameAuto,
       type: nextType,
       shape: next.shape,
-      accountType: normalizedAccountType || undefined,
       description: nextDescription,
       color: next.fillColor || undefined,
       data: nextNodeData
     };
 
-    const previousDataText = JSON.stringify(selectedNode.data || {});
-    const nextDataText = JSON.stringify(nextNode.data || {});
+    const hasDataChanged =
+      normalizeNodeAccountType(selectedNode.data?.accountType, selectedNode.accountType) !==
+        (nextNode.data?.accountType || undefined) ||
+      (selectedNode.data?.accountDetails || undefined) !== (nextNode.data?.accountDetails || undefined) ||
+      (selectedNode.data?.showLabel ?? false) !== (nextNode.data?.showLabel ?? false) ||
+      (selectedNode.data?.showType ?? true) !== (nextNode.data?.showType ?? true) ||
+      (selectedNode.data?.showAccount ?? true) !== (nextNode.data?.showAccount ?? true) ||
+      (selectedNode.data?.showAccountDetails ?? false) !== (nextNode.data?.showAccountDetails ?? false) ||
+      (selectedNode.data?.displayStyle || resolveNodeDisplayStyle(selectedNode)) !==
+        (nextNode.data?.displayStyle || resolveNodeDisplayStyle(nextNode)) ||
+      (selectedNode.data?.shape || resolveNodeShape(selectedNode)) !==
+        (nextNode.data?.shape || resolveNodeShape(nextNode)) ||
+      (selectedNode.data?.fillColor || selectedNode.color || undefined) !==
+        (nextNode.data?.fillColor || nextNode.color || undefined) ||
+      (selectedNode.data?.borderColor || undefined) !== (nextNode.data?.borderColor || undefined) ||
+      (selectedNode.data?.borderWidth ?? resolveNodeBorderWidth(selectedNode)) !==
+        (nextNode.data?.borderWidth ?? resolveNodeBorderWidth(nextNode)) ||
+      (selectedNode.data?.borderStyle || resolveNodeBorderStyle(selectedNode)) !==
+        (nextNode.data?.borderStyle || resolveNodeBorderStyle(nextNode)) ||
+      (selectedNode.data?.opacity ?? resolveNodeOpacity(selectedNode)) !==
+        (nextNode.data?.opacity ?? resolveNodeOpacity(nextNode)) ||
+      !!selectedNode.data?.isNameAuto !== !!nextNode.data?.isNameAuto ||
+      !!selectedNode.data?.isPhantom !== !!nextNode.data?.isPhantom ||
+      !!selectedNode.data?.isLocked !== !!nextNode.data?.isLocked ||
+      (selectedNode.data?.scale ?? resolveNodeScale(selectedNode)) !==
+        (nextNode.data?.scale ?? resolveNodeScale(nextNode));
 
     const hasChanged =
       selectedNode.label !== nextNode.label ||
+      !!selectedNode.isNameAuto !== !!nextNode.isNameAuto ||
       selectedNode.type !== nextNode.type ||
       selectedNode.shape !== nextNode.shape ||
-      selectedNode.accountType !== nextNode.accountType ||
       selectedNode.description !== nextNode.description ||
       selectedNode.color !== nextNode.color ||
-      previousDataText !== nextDataText;
+      hasDataChanged;
 
     if (hasChanged) onUpdateNode(nextNode);
   }, [nodeValues, nodeMeta, selectedNode, onUpdateNode]);
@@ -467,87 +835,168 @@ const Inspector: React.FC<InspectorProps> = ({
     if (!parsed.success) return;
 
     const next = parsed.data;
+    const resolvedTiming =
+      next.timingPreset === 'other'
+        ? (next.timingCustom || '').trim()
+        : (next.timingPreset || '').trim();
+    const normalizedFlowTypeCustom = (next.flowTypeCustom || '').trim();
+    const normalizedRailCustom = (next.railCustom || '').trim();
     const nextEdge: Edge = {
       ...selectedEdge,
       label: next.label,
-      rail: next.rail,
-      direction: next.direction || selectedEdge.direction || FlowDirection.PUSH,
-      timing: next.timing || undefined,
-      amount: next.amount || undefined,
-      currency: next.currency || undefined,
-      sequence: Number.isFinite(next.sequence) ? next.sequence : 0,
-      isFX: next.isFX,
-      isExceptionPath: next.isExceptionPath,
-      fxPair: next.fxPair || undefined,
-      recoMethod: next.recoMethod || selectedEdge.recoMethod || ReconciliationMethod.NONE,
-      dataSchema: next.dataSchema || undefined,
-      description: next.description || undefined
+      rail: next.rail || PaymentRail.BLANK,
+      timing: resolvedTiming || undefined,
+      style: next.style,
+      pathType: next.pathType,
+      thickness: next.thickness,
+      showArrowHead: next.showArrowHead,
+      showMidArrow: next.showMidArrow,
+      data: {
+        ...(selectedEdge.data || {}),
+        notes: sanitizeEdgeNotes(selectedEdge.data?.notes),
+        flowType: next.flowType || undefined,
+        flowTypeCustom: normalizedFlowTypeCustom || undefined,
+        timingPreset: next.timingPreset || undefined,
+        timingCustom: (next.timingCustom || '').trim() || undefined,
+        railCustom: normalizedRailCustom || undefined
+      }
     };
 
     const hasChanged =
       selectedEdge.label !== nextEdge.label ||
       selectedEdge.rail !== nextEdge.rail ||
-      selectedEdge.direction !== nextEdge.direction ||
       selectedEdge.timing !== nextEdge.timing ||
-      selectedEdge.amount !== nextEdge.amount ||
-      selectedEdge.currency !== nextEdge.currency ||
-      (selectedEdge.sequence || 0) !== (nextEdge.sequence || 0) ||
-      selectedEdge.isFX !== nextEdge.isFX ||
-      !!selectedEdge.isExceptionPath !== !!nextEdge.isExceptionPath ||
-      selectedEdge.fxPair !== nextEdge.fxPair ||
-      (selectedEdge.recoMethod || ReconciliationMethod.NONE) !==
-        (nextEdge.recoMethod || ReconciliationMethod.NONE) ||
-      selectedEdge.dataSchema !== nextEdge.dataSchema ||
-      selectedEdge.description !== nextEdge.description;
+      selectedEdge.style !== nextEdge.style ||
+      selectedEdge.pathType !== nextEdge.pathType ||
+      (selectedEdge.thickness ?? 2) !== (nextEdge.thickness ?? 2) ||
+      !!selectedEdge.showArrowHead !== !!nextEdge.showArrowHead ||
+      !!selectedEdge.showMidArrow !== !!nextEdge.showMidArrow ||
+      (selectedEdge.data?.flowType || undefined) !== (nextEdge.data?.flowType || undefined) ||
+      (selectedEdge.data?.flowTypeCustom || undefined) !==
+        (nextEdge.data?.flowTypeCustom || undefined) ||
+      (selectedEdge.data?.timingPreset || undefined) !== (nextEdge.data?.timingPreset || undefined) ||
+      (selectedEdge.data?.timingCustom || undefined) !== (nextEdge.data?.timingCustom || undefined) ||
+      (selectedEdge.data?.railCustom || undefined) !== (nextEdge.data?.railCustom || undefined);
 
     if (hasChanged) onUpdateEdge(nextEdge);
   }, [edgeValues, selectedEdge, onUpdateEdge]);
 
   const renderEmptyState = () => (
-    <div className="mb-3 rounded-lg border border-dashed border-slate-300/90 bg-slate-50/65 p-3 text-left dark:border-slate-700/80 dark:bg-slate-900/40">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">Nothing selected</p>
-      <p className="mt-1 text-[12px] text-slate-600 dark:text-slate-300">Select an entity to edit properties.</p>
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        <button type="button" onClick={onOpenInsertPanel} className="status-chip">
+    <div className="mb-3 rounded-lg border border-divider/50 bg-surface-elevated/70 p-3.5 text-left shadow-[var(--ff-shadow-soft)]">
+      <p className="text-[13px] font-semibold text-text-primary">Nothing selected</p>
+      <p className="mt-1 text-[12px] text-text-muted">Select a node, edge, or lane to edit properties.</p>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Button type="button" size="sm" variant="secondary" onClick={onOpenInsertPanel}>
           Open Insert
-        </button>
-        <button type="button" onClick={onOpenCommandPalette} className="status-chip">
-          Command palette (Cmd K)
-        </button>
+        </Button>
+        <Button type="button" size="sm" variant="ghost" onClick={onOpenCommandPalette}>
+          Command palette
+        </Button>
       </div>
     </div>
   );
 
-  const renderTabSelectionHint = (tabName: 'Node' | 'Edge') => (
-    <div className="flex min-h-52 flex-col items-center justify-center rounded-lg border border-dashed border-slate-300/90 p-6 text-center dark:border-slate-700/80">
-      <MousePointer2 className="mb-3 h-8 w-8 text-slate-400" />
-      <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">No {tabName.toLowerCase()} selected</p>
-      <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">Select a {tabName.toLowerCase()} to edit {tabName.toLowerCase()} properties.</p>
-    </div>
-  );
-
-  const tabButtonClass = (tab: InspectorTab, isDisabled = false) =>
-    `flex h-8 items-center justify-center rounded-md px-2 text-[11px] font-semibold uppercase tracking-[0.08em] transition-colors ${
-      activeTab === tab
-        ? 'border border-cyan-400/70 bg-cyan-50 text-cyan-800 dark:border-cyan-400/60 dark:bg-cyan-900/40 dark:text-cyan-100'
-        : 'border border-transparent text-slate-500 hover:bg-slate-100/70 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800/70 dark:hover:text-slate-200'
-    } ${isDisabled ? 'cursor-not-allowed opacity-45 hover:bg-transparent hover:text-slate-500 dark:hover:text-slate-400' : ''}`;
+  const renderLaneState = () => {
+    if (!selectedSwimlaneId) return null;
+    const handleLaneNameCommit = () => {
+      onRenameSwimlane(selectedSwimlaneId, laneNameDraft);
+    };
+    const laneToggleClass = (active: boolean) =>
+      active ? 'status-chip !border-accent/70 !bg-accent/12 !text-accent' : 'status-chip';
+    return (
+      <div data-testid="inspector-swimlane-panel" className="mb-3 rounded-lg border border-divider/70 bg-surface-muted/40 p-3">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <p className="text-[12px] font-semibold text-text-secondary">Lane Properties</p>
+          <button
+            type="button"
+            onClick={() => onSelectSwimlane(null)}
+            className="status-chip !h-7 !px-2.5"
+          >
+            Clear lane selection
+          </button>
+        </div>
+        <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.08em] text-text-muted" htmlFor="lane-name-input">
+          Lane Name
+        </label>
+        <input
+          ref={laneNameInputRef}
+          id="lane-name-input"
+          data-testid="inspector-swimlane-name"
+          value={laneNameDraft}
+          onChange={(event) => setLaneNameDraft(event.target.value)}
+          onBlur={handleLaneNameCommit}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              handleLaneNameCommit();
+              (event.currentTarget as HTMLInputElement).blur();
+            }
+          }}
+          className="w-full rounded-xl border border-divider/70 bg-surface-panel px-3 py-2 text-[13px] text-text-primary outline-none transition focus:border-accent/70 focus:ring-2 focus:ring-accent/20"
+          placeholder={LANE_NAME_PLACEHOLDER}
+        />
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button
+            type="button"
+            data-testid="inspector-swimlane-toggle-collapse"
+            onClick={() => onToggleSwimlaneCollapsed(selectedSwimlaneId)}
+            className={laneToggleClass(isSelectedLaneCollapsed)}
+          >
+            {isSelectedLaneCollapsed ? 'Expand lane' : 'Collapse lane'}
+          </button>
+          <button
+            type="button"
+            data-testid="inspector-swimlane-toggle-lock"
+            onClick={() => onToggleSwimlaneLocked(selectedSwimlaneId)}
+            className={laneToggleClass(isSelectedLaneLocked)}
+          >
+            {isSelectedLaneLocked ? 'Unlock lane' : 'Lock lane'}
+          </button>
+          <button
+            type="button"
+            data-testid="inspector-swimlane-toggle-hide"
+            onClick={() => onToggleSwimlaneHidden(selectedSwimlaneId)}
+            className={laneToggleClass(isSelectedLaneHidden)}
+          >
+            {isSelectedLaneHidden ? 'Show lane' : 'Hide lane'}
+          </button>
+        </div>
+        <div className="mt-3 border-t border-divider/70 pt-2">
+          <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-text-muted">All lanes</p>
+          <div className="flex flex-wrap gap-2">
+            {swimlaneLabels.map((laneLabel, index) => {
+              const laneId = index + 1;
+              const isActive = selectedSwimlaneId === laneId;
+              return (
+                <button
+                  key={`lane-pill-${laneId}`}
+                  type="button"
+                  onClick={() => onSelectSwimlane(laneId)}
+                  className={isActive ? 'status-chip !border-accent/70 !bg-accent/12 !text-accent' : 'status-chip'}
+                >
+                  {laneLabel || LANE_NAME_PLACEHOLDER}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
-    <div className={`flex h-full flex-col ${isDarkMode ? 'bg-slate-900/90' : 'bg-white/90'}`}>
+    <div className="flex h-full flex-col bg-surface-panel/85">
       <div
-        className={`sticky top-0 z-10 border-b px-3 py-2 backdrop-blur ${
-          isDarkMode ? 'border-slate-700/70 bg-slate-900/88' : 'border-slate-200/75 bg-white/88'
-        }`}
+        className="sticky top-0 z-10 border-b border-divider/65 bg-surface-panel/88 px-3 py-2 backdrop-blur"
       >
         <div className="mb-2 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <div className="h-2 w-2 rounded-full bg-cyan-500" />
-            <h2 className="text-xs font-semibold uppercase tracking-[0.14em] dark:text-slate-200">Inspector</h2>
+            <div className="h-2 w-2 rounded-full bg-accent" />
+            <h2 className="text-[15px] font-semibold text-text-primary">Inspector</h2>
           </div>
           <button
             onClick={onClose}
-            className="rounded-md border border-slate-300/80 p-1.5 transition-colors hover:bg-slate-100 dark:border-slate-700/80 dark:hover:bg-slate-800"
+            className="ui-icon-button h-8 w-8"
             aria-label="Close inspector"
           >
             <X className="h-4 w-4" />
@@ -556,82 +1005,35 @@ const Inspector: React.FC<InspectorProps> = ({
 
         <div
           data-testid="inspector-mode-title"
-          className="mb-2 rounded-lg border border-slate-200/70 bg-slate-50/80 px-2.5 py-2 text-[12px] font-semibold text-slate-700 dark:border-slate-700/70 dark:bg-slate-800/70 dark:text-slate-200"
+          className="mb-2 rounded-lg border border-divider/45 bg-surface-muted/40 px-2.5 py-2"
         >
-          {selectionMode === 'node' ? 'Node' : selectionMode === 'edge' ? 'Edge' : 'Nothing selected'}
-        </div>
-
-        <div className="grid grid-cols-3 gap-1 rounded-lg border border-slate-200/70 bg-slate-50/75 p-1 dark:border-slate-700/80 dark:bg-slate-900/55">
-          <button
-            type="button"
-            data-testid="inspector-tab-node"
-            onClick={() => setActiveTab('node')}
-            className={tabButtonClass('node', !selectedNode)}
-            disabled={!selectedNode}
-          >
-            Node
-          </button>
-          <button
-            type="button"
-            data-testid="inspector-tab-edge"
-            onClick={() => setActiveTab('edge')}
-            className={tabButtonClass('edge', !selectedEdge)}
-            disabled={!selectedEdge}
-          >
-            Edge
-          </button>
-          <button
-            type="button"
-            data-testid="inspector-tab-canvas"
-            onClick={() => setActiveTab('canvas')}
-            className={tabButtonClass('canvas')}
-          >
-            Canvas
-          </button>
+          <div className="text-[11px] font-semibold text-text-muted">
+            {modeMeta.title}
+          </div>
+          <div className="mt-0.5 truncate text-[13px] font-semibold text-text-primary">
+            {modeMeta.detail}
+          </div>
         </div>
       </div>
 
-      <div ref={scrollBodyRef} data-testid="inspector-scroll-body" className="custom-scrollbar flex-1 overflow-y-auto p-2">
-        <div
-          className={`sticky top-0 z-[1] mb-2 rounded-lg border px-2.5 py-2 backdrop-blur ${
-            isDarkMode ? 'border-slate-700/70 bg-slate-900/86' : 'border-slate-200/75 bg-white/88'
-          }`}
-        >
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400">
-                {contextMeta.label}
-              </div>
-              <div className="mt-0.5 truncate text-[12px] font-semibold text-slate-700 dark:text-slate-200">
-                {contextMeta.detail}
-              </div>
-            </div>
-
-            {activeTab === 'node' && selectedNode ? (
-              <button type="button" onClick={onDuplicateSelection} className="status-chip !h-7 !px-2.5">
-                Duplicate
-              </button>
-            ) : null}
-
-            {activeTab === 'edge' && selectedEdge ? (
-              <button
-                type="button"
-                onClick={handleResetEdgeFields}
-                className="rounded-md border border-slate-300 px-2.5 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-              >
-                Reset fields
-              </button>
-            ) : null}
+      <div ref={scrollBodyRef} data-testid="inspector-scroll-body" className="custom-scrollbar flex-1 overflow-y-auto p-2.5">
+        {selectionMode === 'node' && selectedNode ? (
+          <div className="mb-2 flex justify-end">
+            <button type="button" onClick={onDuplicateSelection} className="status-chip !h-7 !px-2.5">
+              Duplicate
+            </button>
           </div>
-        </div>
+        ) : null}
 
         {selectionMode === 'empty' ? renderEmptyState() : null}
+        {selectionMode === 'lane' ? renderLaneState() : null}
 
-        {activeTab === 'node' && selectedNode ? (
+        {selectionMode === 'node' && selectedNode ? (
           <NodeInspectorSections
             register={nodeForm.register}
             setValue={nodeForm.setValue}
             values={nodeValues}
+            isNameAuto={selectedNodeIsNameAuto}
             nodeDetailsOpen={nodeDetailsOpen}
             onToggleNodeDetails={() => setNodeDetailsOpen((prev) => !prev)}
             nodeMeta={nodeMeta}
@@ -640,37 +1042,18 @@ const Inspector: React.FC<InspectorProps> = ({
             onTogglePinnedNodeAttribute={onTogglePinnedNodeAttribute}
             onResetNodeSection={handleResetNodeFields}
             onApplyNodeSection={handleApplyToSimilarNodes}
+            onNotesBlur={handleNodeNotesBlur}
           />
         ) : null}
 
-        {activeTab === 'node' && !selectedNode ? renderTabSelectionHint('Node') : null}
-
-        {activeTab === 'edge' && selectedEdge ? (
+        {selectionMode === 'edge' && selectedEdge ? (
           <EdgeInspectorSections
             register={edgeForm.register}
             setValue={edgeForm.setValue}
-            selectedRail={edgeValues?.rail}
-            edgeIsFX={edgeIsFX}
-            edgeIsExceptionPath={edgeIsExceptionPath}
-            edgeAdvancedOpen={edgeAdvancedOpen}
-            onToggleEdgeAdvanced={() => setEdgeAdvancedOpen((prev) => !prev)}
+            values={edgeValues}
             onResetEdgeSection={handleResetEdgeFields}
-          />
-        ) : null}
-
-        {activeTab === 'edge' && !selectedEdge ? renderTabSelectionHint('Edge') : null}
-
-        {activeTab === 'canvas' ? (
-          <CanvasInspectorSections
-            gridMode={gridMode}
-            onSetGridMode={onSetGridMode}
-            showMinimap={showMinimap}
-            onToggleMinimap={onToggleMinimap}
-            laneGroupingMode={laneGroupingMode}
-            onSetLaneGroupingMode={onSetLaneGroupingMode}
-            swimlaneLabels={swimlaneLabels}
-            onUpdateSwimlaneLabel={onUpdateSwimlaneLabel}
-            onOpenExportMenu={onOpenExportMenu}
+            onResetStylingSection={handleResetEdgeStyling}
+            onNotesBlur={handleEdgeNotesBlur}
           />
         ) : null}
       </div>

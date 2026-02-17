@@ -80,6 +80,7 @@ const COLLAPSED_SIDEBAR_WIDTH = 62;
 const DEFAULT_INSPECTOR_WIDTH = 360;
 const MIN_INSPECTOR_WIDTH = 320;
 const MAX_INSPECTOR_WIDTH = 520;
+const SWIMLANES_ENABLED = false;
 
 const createId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const createWorkspaceId = () => {
@@ -107,7 +108,7 @@ type EdgePathType = 'bezier' | 'orthogonal';
 const loadStoredEdgeStyleDefault = (): EdgeStyle => {
   if (typeof window === 'undefined') return 'solid';
   try {
-    const raw = window.localStorage.getItem(EDGE_STYLE_DEFAULT_STORAGE_KEY);
+    const raw = window.sessionStorage.getItem(EDGE_STYLE_DEFAULT_STORAGE_KEY);
     if (raw === 'dashed' || raw === 'dotted' || raw === 'solid') {
       return raw;
     }
@@ -120,7 +121,7 @@ const loadStoredEdgeStyleDefault = (): EdgeStyle => {
 const loadStoredEdgePathDefault = (): EdgePathType => {
   if (typeof window === 'undefined') return 'bezier';
   try {
-    const raw = window.localStorage.getItem(EDGE_PATH_DEFAULT_STORAGE_KEY);
+    const raw = window.sessionStorage.getItem(EDGE_PATH_DEFAULT_STORAGE_KEY);
     if (raw === 'orthogonal' || raw === 'bezier') {
       return raw;
     }
@@ -153,7 +154,7 @@ const sortWorkspacesByRecent = (workspaces: WorkspaceSummary[]) =>
 const loadWorkspaceIndex = (): WorkspaceSummary[] => {
   if (typeof window === 'undefined') return [];
   try {
-    const raw = window.localStorage.getItem(WORKSPACE_INDEX_STORAGE_KEY);
+    const raw = window.sessionStorage.getItem(WORKSPACE_INDEX_STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
@@ -170,7 +171,7 @@ const loadWorkspaceIndex = (): WorkspaceSummary[] => {
 const persistWorkspaceIndex = (workspaces: WorkspaceSummary[]): boolean => {
   if (typeof window === 'undefined') return false;
   try {
-    window.localStorage.setItem(
+    window.sessionStorage.setItem(
       WORKSPACE_INDEX_STORAGE_KEY,
       JSON.stringify(sortWorkspacesByRecent(workspaces))
     );
@@ -385,8 +386,30 @@ const getLaneLabelsForMode = (mode: LaneGroupingMode): string[] => {
 const clampLaneId = (laneId: number, laneCount: number) =>
   Math.max(1, Math.min(Math.max(1, laneCount), laneId));
 
-const getLaneIdFromY = (y: number, laneCount: number) =>
-  clampLaneId(Math.floor(Math.max(0, y) / SWIMLANE_HEIGHT) + 1, laneCount);
+const getCollapsedLaneOffset = (laneId: number, collapsedLaneIds: Set<number>) => {
+  let collapsedBefore = 0;
+  for (const collapsedId of collapsedLaneIds) {
+    if (collapsedId < laneId) collapsedBefore += 1;
+  }
+  return collapsedBefore * (SWIMLANE_HEIGHT - SWIMLANE_HEADER_HEIGHT);
+};
+
+const getLaneTop = (laneId: number, collapsedLaneIds: Set<number>) =>
+  (laneId - 1) * SWIMLANE_HEIGHT - getCollapsedLaneOffset(laneId, collapsedLaneIds);
+
+const getLaneHeight = (laneId: number, collapsedLaneIds: Set<number>) =>
+  collapsedLaneIds.has(laneId) ? SWIMLANE_HEADER_HEIGHT : SWIMLANE_HEIGHT;
+
+const getLaneIdFromY = (y: number, laneCount: number, collapsedLaneIds: Set<number>) => {
+  for (let laneId = 1; laneId <= laneCount; laneId += 1) {
+    const laneTop = getLaneTop(laneId, collapsedLaneIds);
+    const laneHeight = getLaneHeight(laneId, collapsedLaneIds);
+    if (y < laneTop + laneHeight || laneId === laneCount) {
+      return laneId;
+    }
+  }
+  return laneCount;
+};
 
 const getNearestAllowedLaneId = (
   preferredLaneId: number,
@@ -406,9 +429,11 @@ const getNearestAllowedLaneId = (
   return normalizedPreferred;
 };
 
-const getLaneVerticalBounds = (laneId: number, nodeHeight = 0) => {
-  const laneTop = (laneId - 1) * SWIMLANE_HEIGHT + SWIMLANE_HEADER_HEIGHT + SWIMLANE_PADDING_Y;
-  const laneBottom = laneId * SWIMLANE_HEIGHT - nodeHeight - SWIMLANE_PADDING_Y;
+const getLaneVerticalBounds = (laneId: number, collapsedLaneIds: Set<number>, nodeHeight = 0) => {
+  const laneTopRaw = getLaneTop(laneId, collapsedLaneIds);
+  const laneHeight = getLaneHeight(laneId, collapsedLaneIds);
+  const laneTop = laneTopRaw + SWIMLANE_HEADER_HEIGHT + SWIMLANE_PADDING_Y;
+  const laneBottom = laneTopRaw + laneHeight - nodeHeight - SWIMLANE_PADDING_Y;
   const laneMax = Math.max(laneTop, laneBottom);
   return { laneTop, laneMax };
 };
@@ -570,7 +595,7 @@ const parseRecoveryMeta = (value: unknown): RecoveryMeta | null => {
 const loadRecoveryMeta = (storageKey: string): RecoveryMeta | null => {
   if (typeof window === 'undefined') return null;
   try {
-    const raw = window.localStorage.getItem(storageKey);
+    const raw = window.sessionStorage.getItem(storageKey);
     if (!raw) return null;
     return parseRecoveryMeta(JSON.parse(raw));
   } catch {
@@ -581,7 +606,7 @@ const loadRecoveryMeta = (storageKey: string): RecoveryMeta | null => {
 const persistRecoveryMeta = (storageKey: string, meta: RecoveryMeta): boolean => {
   if (typeof window === 'undefined') return false;
   try {
-    window.localStorage.setItem(storageKey, JSON.stringify(meta));
+    window.sessionStorage.setItem(storageKey, JSON.stringify(meta));
     return true;
   } catch {
     return false;
@@ -620,7 +645,7 @@ const loadStoredPanelWidth = (
 ) => {
   if (typeof window === 'undefined') return fallback;
   try {
-    const raw = window.localStorage.getItem(key);
+    const raw = window.sessionStorage.getItem(key);
     if (!raw) return fallback;
     const parsed = Number(raw);
     if (!Number.isFinite(parsed)) return fallback;
@@ -633,7 +658,7 @@ const loadStoredPanelWidth = (
 const loadStoredThemePreference = (): boolean => {
   if (typeof window === 'undefined') return false;
   try {
-    return window.localStorage.getItem(THEME_STORAGE_KEY) === 'dark';
+    return window.sessionStorage.getItem(THEME_STORAGE_KEY) === 'dark';
   } catch {
     return false;
   }
@@ -642,7 +667,7 @@ const loadStoredThemePreference = (): boolean => {
 const persistStoredThemePreference = (isDarkMode: boolean): void => {
   if (typeof window === 'undefined') return;
   try {
-    window.localStorage.setItem(THEME_STORAGE_KEY, isDarkMode ? 'dark' : 'light');
+    window.sessionStorage.setItem(THEME_STORAGE_KEY, isDarkMode ? 'dark' : 'light');
   } catch {
     // Ignore storage write errors for theme preference.
   }
@@ -714,7 +739,7 @@ const App: React.FC = () => {
   const [snapToGrid, setSnapToGrid] = useState(() => {
     if (typeof window === 'undefined') return true;
     try {
-      return window.localStorage.getItem(SNAP_TO_GRID_STORAGE_KEY) !== 'false';
+      return window.sessionStorage.getItem(SNAP_TO_GRID_STORAGE_KEY) !== 'false';
     } catch {
       return true;
     }
@@ -722,9 +747,8 @@ const App: React.FC = () => {
   const showPorts = useUIStore((state) => state.showPorts);
   const setShowPorts = useUIStore((state) => state.setShowPorts);
   const toggleShowPorts = useUIStore((state) => state.toggleShowPorts);
-  const showSwimlanes = useUIStore((state) => state.showSwimlanes);
+  const storedShowSwimlanes = useUIStore((state) => state.showSwimlanes);
   const setShowSwimlanes = useUIStore((state) => state.setShowSwimlanes);
-  const toggleShowSwimlanes = useUIStore((state) => state.toggleShowSwimlanes);
   const swimlaneLabels = useUIStore((state) => state.swimlaneLabels);
   const setSwimlaneLabels = useUIStore((state) => state.setSwimlaneLabels);
   const swimlaneCollapsedIds = useUIStore((state) => state.swimlaneCollapsedIds);
@@ -752,7 +776,7 @@ const App: React.FC = () => {
   const [isAIModalOpen, setIsAIModalOpen] = useState(false);
   const [isQuickStartVisible, setIsQuickStartVisible] = useState(() => {
     if (typeof window === 'undefined') return false;
-    return window.localStorage.getItem(ONBOARDING_DISMISSED_STORAGE_KEY) !== 'true';
+    return window.sessionStorage.getItem(ONBOARDING_DISMISSED_STORAGE_KEY) !== 'true';
   });
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
@@ -760,7 +784,7 @@ const App: React.FC = () => {
   const [showMinimap, setShowMinimap] = useState(() => {
     if (typeof window === 'undefined') return false;
     try {
-      return window.localStorage.getItem(MINIMAP_STORAGE_KEY) === 'true';
+      return window.sessionStorage.getItem(MINIMAP_STORAGE_KEY) === 'true';
     } catch {
       return false;
     }
@@ -812,10 +836,20 @@ const App: React.FC = () => {
   const saveDiagramTimeoutRef = useRef<number | null>(null);
   const saveLayoutTimeoutRef = useRef<number | null>(null);
   const wasMobileViewportRef = useRef(isMobileViewport);
-  const laneCount = Math.max(1, swimlaneLabels.length);
-  const lockedLaneSet = useMemo(() => new Set(swimlaneLockedIds), [swimlaneLockedIds]);
-  const collapsedLaneSet = useMemo(() => new Set(swimlaneCollapsedIds), [swimlaneCollapsedIds]);
-  const hiddenLaneSet = useMemo(() => new Set(swimlaneHiddenIds), [swimlaneHiddenIds]);
+  const showSwimlanes = SWIMLANES_ENABLED && storedShowSwimlanes;
+  const laneCount = showSwimlanes ? Math.max(1, swimlaneLabels.length) : 1;
+  const lockedLaneSet = useMemo(
+    () => (showSwimlanes ? new Set(swimlaneLockedIds) : new Set<number>()),
+    [showSwimlanes, swimlaneLockedIds]
+  );
+  const collapsedLaneSet = useMemo(
+    () => (showSwimlanes ? new Set(swimlaneCollapsedIds) : new Set<number>()),
+    [showSwimlanes, swimlaneCollapsedIds]
+  );
+  const hiddenLaneSet = useMemo(
+    () => (showSwimlanes ? new Set(swimlaneHiddenIds) : new Set<number>()),
+    [showSwimlanes, swimlaneHiddenIds]
+  );
   const nonRenderableLaneSet = useMemo(
     () => new Set([...collapsedLaneSet, ...hiddenLaneSet]),
     [collapsedLaneSet, hiddenLaneSet]
@@ -833,7 +867,7 @@ const App: React.FC = () => {
   const dismissQuickStart = useCallback(() => {
     setIsQuickStartVisible(false);
     try {
-      window.localStorage.setItem(ONBOARDING_DISMISSED_STORAGE_KEY, 'true');
+      window.sessionStorage.setItem(ONBOARDING_DISMISSED_STORAGE_KEY, 'true');
     } catch {
       // Ignore storage errors and only dismiss for this session.
     }
@@ -846,23 +880,35 @@ const App: React.FC = () => {
 
   const getNodeLaneId = useCallback(
     (node: Node) => {
+      if (!showSwimlanes) return 1;
       if (typeof node.swimlaneId === 'number' && Number.isFinite(node.swimlaneId)) {
         return clampLaneId(Math.floor(node.swimlaneId), laneCount);
       }
-      return getLaneIdFromY(node.position.y, laneCount);
+      return getLaneIdFromY(node.position.y, laneCount, collapsedLaneSet);
     },
-    [laneCount]
+    [collapsedLaneSet, laneCount, showSwimlanes]
   );
 
   const resolveLanePlacement = useCallback(
     (node: Node, nextPosition: Position, enforceLock = true) => {
+      if (!showSwimlanes) {
+        return {
+          currentLaneId: 1,
+          targetLaneId: 1,
+          nextPosition
+        };
+      }
       const currentLaneId = getNodeLaneId(node);
-      const preferredLaneId = getLaneIdFromY(nextPosition.y, laneCount);
+      const preferredLaneId = getLaneIdFromY(nextPosition.y, laneCount, collapsedLaneSet);
       const targetLaneId =
         enforceLock && lockedLaneSet.size > 0
           ? getNearestAllowedLaneId(preferredLaneId, laneCount, lockedLaneSet)
           : preferredLaneId;
-      const { laneTop, laneMax } = getLaneVerticalBounds(targetLaneId, getNodeDimensions(node).height);
+      const { laneTop, laneMax } = getLaneVerticalBounds(
+        targetLaneId,
+        collapsedLaneSet,
+        getNodeDimensions(node).height
+      );
       const clampedY = Math.max(laneTop, Math.min(laneMax, nextPosition.y));
       return {
         currentLaneId,
@@ -873,18 +919,18 @@ const App: React.FC = () => {
         }
       };
     },
-    [getNodeLaneId, laneCount, lockedLaneSet]
+    [collapsedLaneSet, getNodeLaneId, laneCount, lockedLaneSet, showSwimlanes]
   );
 
   useEffect(() => {
     if (activeTool !== 'draw') return;
     try {
-      if (window.localStorage.getItem(CONNECT_HINT_STORAGE_KEY) === 'true') return;
+      if (window.sessionStorage.getItem(CONNECT_HINT_STORAGE_KEY) === 'true') return;
       pushToast(
         'Connect mode: drag from a handle or click source then target. Press Esc to cancel.',
         'info'
       );
-      window.localStorage.setItem(CONNECT_HINT_STORAGE_KEY, 'true');
+      window.sessionStorage.setItem(CONNECT_HINT_STORAGE_KEY, 'true');
     } catch {
       // Ignore storage failures and keep the hint non-blocking.
     }
@@ -911,9 +957,24 @@ const App: React.FC = () => {
   }, [isMobileViewport]);
 
   useEffect(() => {
+    if (SWIMLANES_ENABLED) return;
+    setShowSwimlanes(false);
+    setSwimlaneCollapsedIds([]);
+    setSwimlaneLockedIds([]);
+    setSwimlaneHiddenIds([]);
+    setSelectedSwimlaneId(null);
+  }, [
+    setSelectedSwimlaneId,
+    setShowSwimlanes,
+    setSwimlaneCollapsedIds,
+    setSwimlaneHiddenIds,
+    setSwimlaneLockedIds
+  ]);
+
+  useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
-      window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(sidebarWidth));
+      window.sessionStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(sidebarWidth));
     } catch {
       // Ignore local storage write errors for panel width preferences.
     }
@@ -922,7 +983,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
-      window.localStorage.setItem(INSPECTOR_WIDTH_STORAGE_KEY, String(inspectorWidth));
+      window.sessionStorage.setItem(INSPECTOR_WIDTH_STORAGE_KEY, String(inspectorWidth));
     } catch {
       // Ignore local storage write errors for panel width preferences.
     }
@@ -1019,20 +1080,28 @@ const App: React.FC = () => {
   const applyLayoutSettings = useCallback(
     (layout: Partial<LayoutSettings>) => {
       setSelectedSwimlaneId(null);
-      if (typeof layout.showSwimlanes === 'boolean') {
+      if (SWIMLANES_ENABLED && typeof layout.showSwimlanes === 'boolean') {
         setShowSwimlanes(layout.showSwimlanes);
+      } else {
+        setShowSwimlanes(false);
       }
-      if (Array.isArray(layout.swimlaneLabels) && layout.swimlaneLabels.length >= 2) {
+      if (SWIMLANES_ENABLED && Array.isArray(layout.swimlaneLabels) && layout.swimlaneLabels.length >= 2) {
         setSwimlaneLabels(layout.swimlaneLabels);
       }
-      if (Array.isArray(layout.swimlaneCollapsedIds)) {
+      if (SWIMLANES_ENABLED && Array.isArray(layout.swimlaneCollapsedIds)) {
         setSwimlaneCollapsedIds(layout.swimlaneCollapsedIds);
+      } else {
+        setSwimlaneCollapsedIds([]);
       }
-      if (Array.isArray(layout.swimlaneLockedIds)) {
+      if (SWIMLANES_ENABLED && Array.isArray(layout.swimlaneLockedIds)) {
         setSwimlaneLockedIds(layout.swimlaneLockedIds);
+      } else {
+        setSwimlaneLockedIds([]);
       }
-      if (Array.isArray(layout.swimlaneHiddenIds)) {
+      if (SWIMLANES_ENABLED && Array.isArray(layout.swimlaneHiddenIds)) {
         setSwimlaneHiddenIds(layout.swimlaneHiddenIds);
+      } else {
+        setSwimlaneHiddenIds([]);
       }
       if (layout.gridMode) {
         setGridMode(layout.gridMode);
@@ -1079,7 +1148,7 @@ const App: React.FC = () => {
       const nextMeta: RecoveryMeta = { lastSavedAt: new Date().toISOString() };
       const metaSaved = persistRecoveryMeta(workspaceRecoveryMetaStorageKey, nextMeta);
       try {
-        window.localStorage.setItem(
+        window.sessionStorage.setItem(
           getWorkspaceBackupStorageKey(activeWorkspaceId, nextMeta.lastSavedAt),
           JSON.stringify({
             workspaceId: activeWorkspaceId,
@@ -1125,7 +1194,7 @@ const App: React.FC = () => {
 
     if (typeof window !== 'undefined') {
       activeWorkspaceIdFromStorage =
-        window.localStorage.getItem(ACTIVE_WORKSPACE_STORAGE_KEY) || '';
+        window.sessionStorage.getItem(ACTIVE_WORKSPACE_STORAGE_KEY) || '';
     }
 
     if (nextWorkspaceIndex.length === 0) {
@@ -1140,7 +1209,7 @@ const App: React.FC = () => {
       nextWorkspaceIndex = [seedWorkspace];
       persistWorkspaceIndex(nextWorkspaceIndex);
       if (typeof window !== 'undefined') {
-        window.localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, workspaceId);
+        window.sessionStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, workspaceId);
       }
       activeWorkspaceIdFromStorage = workspaceId;
     }
@@ -1158,7 +1227,7 @@ const App: React.FC = () => {
     setActiveWorkspace(touchedWorkspace);
 
     if (typeof window !== 'undefined') {
-      window.localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, touchedWorkspace.workspaceId);
+      window.sessionStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, touchedWorkspace.workspaceId);
     }
 
     const activeDiagramKey = getWorkspaceStorageKey(touchedWorkspace.workspaceId);
@@ -1355,7 +1424,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!hasLoadedFromStorage.current) return;
     try {
-      window.localStorage.setItem(SNAP_TO_GRID_STORAGE_KEY, snapToGrid ? 'true' : 'false');
+      window.sessionStorage.setItem(SNAP_TO_GRID_STORAGE_KEY, snapToGrid ? 'true' : 'false');
     } catch {
       // ignore storage errors for view-only preferences
     }
@@ -1364,7 +1433,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!hasLoadedFromStorage.current) return;
     try {
-      window.localStorage.setItem(MINIMAP_STORAGE_KEY, showMinimap ? 'true' : 'false');
+      window.sessionStorage.setItem(MINIMAP_STORAGE_KEY, showMinimap ? 'true' : 'false');
     } catch {
       // ignore storage errors for view-only preferences
     }
@@ -1373,7 +1442,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!hasLoadedFromStorage.current) return;
     try {
-      window.localStorage.setItem(EDGE_STYLE_DEFAULT_STORAGE_KEY, edgeDefaultStyle);
+      window.sessionStorage.setItem(EDGE_STYLE_DEFAULT_STORAGE_KEY, edgeDefaultStyle);
     } catch {
       // ignore storage errors for editor defaults
     }
@@ -1382,7 +1451,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!hasLoadedFromStorage.current) return;
     try {
-      window.localStorage.setItem(EDGE_PATH_DEFAULT_STORAGE_KEY, edgeDefaultPathType);
+      window.sessionStorage.setItem(EDGE_PATH_DEFAULT_STORAGE_KEY, edgeDefaultPathType);
     } catch {
       // ignore storage errors for editor defaults
     }
@@ -1445,23 +1514,27 @@ const App: React.FC = () => {
     for (const [id, nextPosition] of updates) {
       updatesById.set(id, nextPosition as Position);
     }
+    const blockedLaneIds = new Set([...lockedLaneSet, ...nonRenderableLaneSet]);
     setNodes((prev) =>
       prev.map((node) => {
         const nextPosition = updatesById.get(node.id);
         if (!nextPosition) return node;
         if (node.data?.isLocked) return node;
         const placement = resolveLanePlacement(node, nextPosition, true);
-        if (lockedLaneSet.has(placement.currentLaneId) || lockedLaneSet.has(placement.targetLaneId)) {
+        if (
+          lockedLaneSet.has(placement.currentLaneId) ||
+          blockedLaneIds.has(placement.targetLaneId)
+        ) {
           return node;
         }
         return {
           ...node,
           position: placement.nextPosition,
-          swimlaneId: placement.targetLaneId
+          ...(showSwimlanes ? { swimlaneId: placement.targetLaneId } : { swimlaneId: undefined })
         };
       })
     );
-  }, [lockedLaneSet, resolveLanePlacement]);
+  }, [lockedLaneSet, nonRenderableLaneSet, resolveLanePlacement, showSwimlanes]);
 
   const handleUpdateNodePosition = useCallback(
     (id: string, pos: Position) => {
@@ -1554,29 +1627,31 @@ const App: React.FC = () => {
           notes: ''
         }
       });
-      const blockedLaneIds = new Set([...lockedLaneSet, ...nonRenderableLaneSet]);
-      const preferredLaneId = getLaneIdFromY(finalPos.y, laneCount);
-      const targetLaneId =
-        blockedLaneIds.size > 0
-          ? getNearestAllowedLaneId(preferredLaneId, laneCount, blockedLaneIds)
-          : preferredLaneId;
-      const { laneTop, laneMax } = getLaneVerticalBounds(targetLaneId, getNodeDimensions(draftNode).height);
-      const adjustedPosition = {
-        x: draftNode.position.x,
-        y: Math.max(laneTop, Math.min(laneMax, draftNode.position.y))
-      };
+      const placement = resolveLanePlacement(draftNode, draftNode.position, true);
       const newNode: Node = {
         ...draftNode,
-        position: adjustedPosition,
-        swimlaneId: targetLaneId
+        position: placement.nextPosition,
+        ...(showSwimlanes ? { swimlaneId: placement.targetLaneId } : { swimlaneId: undefined })
       };
       return [...prev, newNode];
     });
-  }, [pushHistory, getCanvasCenterWorld, lockedLaneSet, nonRenderableLaneSet, laneCount]);
+  }, [getCanvasCenterWorld, pushHistory, resolveLanePlacement, showSwimlanes]);
 
   const handleConnect = useCallback((sourceId: string, targetId: string, spIdx: number, tpIdx: number) => {
     if (sourceId === targetId) {
       pushToast('Connection blocked: source and target cannot be the same node.', 'warning');
+      return;
+    }
+
+    const sourceNode = nodes.find((node) => node.id === sourceId);
+    const targetNode = nodes.find((node) => node.id === targetId);
+    const isBlockedForConnect = (node: Node | undefined) => {
+      if (!node) return true;
+      const laneId = getNodeLaneId(node);
+      return !!node.data?.isLocked || lockedLaneSet.has(laneId) || nonRenderableLaneSet.has(laneId);
+    };
+    if (isBlockedForConnect(sourceNode) || isBlockedForConnect(targetNode)) {
+      pushToast('Connection blocked: source or target lane is locked/hidden.', 'warning');
       return;
     }
 
@@ -1623,7 +1698,19 @@ const App: React.FC = () => {
     pushHistory();
     setEdges((prev) => [...prev, newEdge]);
     handleSelectEdge(newEdgeId);
-  }, [activeArrowConfig, edgeDefaultPathType, edgeDefaultStyle, pushHistory, handleSelectEdge, edges, pushToast]);
+  }, [
+    activeArrowConfig,
+    edgeDefaultPathType,
+    edgeDefaultStyle,
+    pushHistory,
+    handleSelectEdge,
+    edges,
+    getNodeLaneId,
+    lockedLaneSet,
+    nodes,
+    nonRenderableLaneSet,
+    pushToast
+  ]);
 
   const handleReconnectEdge = useCallback(
     (
@@ -1632,6 +1719,18 @@ const App: React.FC = () => {
     ) => {
       if (next.sourceId === next.targetId) {
         pushToast('Connection blocked: source and target cannot be the same node.', 'warning');
+        return;
+      }
+
+      const nextSourceNode = nodes.find((node) => node.id === next.sourceId);
+      const nextTargetNode = nodes.find((node) => node.id === next.targetId);
+      const isBlockedForReconnect = (node: Node | undefined) => {
+        if (!node) return true;
+        const laneId = getNodeLaneId(node);
+        return !!node.data?.isLocked || lockedLaneSet.has(laneId) || nonRenderableLaneSet.has(laneId);
+      };
+      if (isBlockedForReconnect(nextSourceNode) || isBlockedForReconnect(nextTargetNode)) {
+        pushToast('Reconnect blocked: source or target lane is locked/hidden.', 'warning');
         return;
       }
 
@@ -1675,7 +1774,7 @@ const App: React.FC = () => {
       );
       handleSelectEdge(edgeId);
     },
-    [edges, handleSelectEdge, pushHistory, pushToast]
+    [edges, getNodeLaneId, handleSelectEdge, lockedLaneSet, nodes, nonRenderableLaneSet, pushHistory, pushToast]
   );
 
   const getDefaultConnectorCenter = useCallback(() => {
@@ -1735,17 +1834,29 @@ const App: React.FC = () => {
 
   const handleAddConnector = useCallback((centerPos?: { x: number; y: number }) => {
     const rawCenter = centerPos || getDefaultConnectorCenter();
-    const blockedLaneIds = new Set([...lockedLaneSet, ...nonRenderableLaneSet]);
-    const preferredLaneId = getLaneIdFromY(rawCenter.y, laneCount);
-    const targetLaneId =
-      blockedLaneIds.size > 0
-        ? getNearestAllowedLaneId(preferredLaneId, laneCount, blockedLaneIds)
-        : preferredLaneId;
-    const { laneTop, laneMax } = getLaneVerticalBounds(targetLaneId, CONNECTOR_HANDLE_HALF * 2);
-    const center = {
-      x: rawCenter.x,
-      y: Math.max(laneTop, Math.min(laneMax, rawCenter.y))
-    };
+    const centerPlacement = showSwimlanes
+      ? (() => {
+          const blockedLaneIds = new Set([...lockedLaneSet, ...nonRenderableLaneSet]);
+          const preferredLaneId = getLaneIdFromY(rawCenter.y, laneCount, collapsedLaneSet);
+          const targetLaneId =
+            blockedLaneIds.size > 0
+              ? getNearestAllowedLaneId(preferredLaneId, laneCount, blockedLaneIds)
+              : preferredLaneId;
+          const { laneTop, laneMax } = getLaneVerticalBounds(
+            targetLaneId,
+            collapsedLaneSet,
+            CONNECTOR_HANDLE_HALF * 2
+          );
+          return {
+            center: {
+              x: rawCenter.x,
+              y: Math.max(laneTop, Math.min(laneMax, rawCenter.y))
+            },
+            laneId: targetLaneId
+          };
+        })()
+      : { center: rawCenter, laneId: 1 };
+    const center = centerPlacement.center;
     const halfLength = CONNECTOR_DEFAULT_LENGTH / 2;
     const sourceNodeId = createId('node');
     const targetNodeId = createId('node');
@@ -1761,7 +1872,7 @@ const App: React.FC = () => {
         y: center.y - CONNECTOR_HANDLE_HALF
       },
       zIndex: 5,
-      swimlaneId: targetLaneId,
+      ...(showSwimlanes ? { swimlaneId: centerPlacement.laneId } : {}),
       isConnectorHandle: true
     };
 
@@ -1775,7 +1886,7 @@ const App: React.FC = () => {
         y: center.y - CONNECTOR_HANDLE_HALF
       },
       zIndex: 5,
-      swimlaneId: targetLaneId,
+      ...(showSwimlanes ? { swimlaneId: centerPlacement.laneId } : {}),
       isConnectorHandle: true
     };
 
@@ -1810,13 +1921,15 @@ const App: React.FC = () => {
     setIsInspectorOpen(true);
   }, [
     activeArrowConfig,
+    collapsedLaneSet,
     edgeDefaultPathType,
     edgeDefaultStyle,
     getDefaultConnectorCenter,
     laneCount,
     lockedLaneSet,
     nonRenderableLaneSet,
-    pushHistory
+    pushHistory,
+    showSwimlanes
   ]);
 
   const handleConnectorNativeDragStart = useCallback(
@@ -1878,11 +1991,11 @@ const App: React.FC = () => {
         return {
           ...node,
           position: placement.nextPosition,
-          swimlaneId: placement.targetLaneId
+          ...(showSwimlanes ? { swimlaneId: placement.targetLaneId } : { swimlaneId: undefined })
         };
       })
     );
-  }, [selectedNodeIds, pushHistory, lockedLaneSet, nonRenderableLaneSet, resolveLanePlacement]);
+  }, [selectedNodeIds, pushHistory, lockedLaneSet, nonRenderableLaneSet, resolveLanePlacement, showSwimlanes]);
 
   const handleDuplicateSelection = useCallback(() => {
     if (selectedNodeIds.length === 0) return;
@@ -1892,30 +2005,21 @@ const App: React.FC = () => {
     if (selectedNodes.length === 0) return;
 
     const idMap = new Map<string, string>();
-    const blockedLaneIds = new Set([...lockedLaneSet, ...nonRenderableLaneSet]);
-    const duplicatedNodes = selectedNodes.map((node) => {
-      const newId = createId('node');
-      idMap.set(node.id, newId);
-      const nextPosition = {
-        x: node.position.x + 40,
-        y: node.position.y + 40
-      };
-      const preferredLaneId = getLaneIdFromY(nextPosition.y, laneCount);
-      const targetLaneId =
-        blockedLaneIds.size > 0
-          ? getNearestAllowedLaneId(preferredLaneId, laneCount, blockedLaneIds)
-          : preferredLaneId;
-      const { laneTop, laneMax } = getLaneVerticalBounds(targetLaneId, getNodeDimensions(node).height);
-      return {
-        ...node,
-        id: newId,
-        position: {
-          x: nextPosition.x,
-          y: Math.max(laneTop, Math.min(laneMax, nextPosition.y))
-        },
-        swimlaneId: targetLaneId
-      } satisfies Node;
-    });
+      const duplicatedNodes = selectedNodes.map((node) => {
+        const newId = createId('node');
+        idMap.set(node.id, newId);
+        const nextPosition = {
+          x: node.position.x + 40,
+          y: node.position.y + 40
+        };
+        const placement = resolveLanePlacement(node, nextPosition, true);
+        return {
+          ...node,
+          id: newId,
+          position: placement.nextPosition,
+          ...(showSwimlanes ? { swimlaneId: placement.targetLaneId } : { swimlaneId: undefined })
+        } satisfies Node;
+      });
 
     const duplicatedEdges = edges
       .filter((edge) => selectedNodeSet.has(edge.sourceId) && selectedNodeSet.has(edge.targetId))
@@ -1933,7 +2037,7 @@ const App: React.FC = () => {
     }
     setSelectedNodeIds(duplicatedNodes.map((node) => node.id));
     setSelectedEdgeId(null);
-  }, [selectedNodeIds, nodes, edges, pushHistory, lockedLaneSet, nonRenderableLaneSet, laneCount]);
+  }, [edges, nodes, pushHistory, resolveLanePlacement, selectedNodeIds, showSwimlanes]);
 
   const handleRenameSelection = useCallback(() => {
     if (!selectedNodeId) return;
@@ -2042,8 +2146,13 @@ const App: React.FC = () => {
 
   const handleToggleSwimlanes = useCallback(() => {
     setSelectedSwimlaneId(null);
-    toggleShowSwimlanes();
-  }, [setSelectedSwimlaneId, toggleShowSwimlanes]);
+    if (!SWIMLANES_ENABLED) {
+      setShowSwimlanes(false);
+      pushToast('Swimlanes are disabled in this canvas mode.', 'info');
+      return;
+    }
+    setShowSwimlanes((prev) => !prev);
+  }, [pushToast, setSelectedSwimlaneId, setShowSwimlanes]);
 
   const clearSelectionForLane = useCallback(
     (laneId: number) => {
@@ -2081,35 +2190,65 @@ const App: React.FC = () => {
       if (laneId !== null) {
         setSelectedNodeIds([]);
         setSelectedEdgeId(null);
+        setIsInspectorOpen(true);
+        if (isMobileViewport) {
+          setIsSidebarOpen(false);
+        }
       }
     },
-    [setSelectedSwimlaneId]
+    [isMobileViewport, setSelectedSwimlaneId]
   );
 
-  const handleRenameSwimlane = useCallback(
-    (laneId: number) => {
+  const commitSwimlaneLabel = useCallback(
+    (laneId: number, nextLabel: string) => {
       const index = laneId - 1;
       if (index < 0 || index >= swimlaneLabels.length) return;
       const current = swimlaneLabels[index];
-      const next = window.prompt('Rename lane', current)?.trim();
-      if (!next || next === current) return;
+      const trimmed = nextLabel.trim();
+      if (trimmed === current) return;
       setSwimlaneLabels(
-        swimlaneLabels.map((label, labelIndex) => (labelIndex === index ? next : label))
+        swimlaneLabels.map((label, labelIndex) => (labelIndex === index ? trimmed : label))
       );
-      pushToast(`Lane renamed to "${next}".`, 'success');
+      if (trimmed) {
+        pushToast(`Lane renamed to "${trimmed}".`, 'success');
+      } else {
+        pushToast('Lane name cleared.', 'success');
+      }
     },
     [pushToast, setSwimlaneLabels, swimlaneLabels]
+  );
+
+  const applyCollapsedLaneReflow = useCallback(
+    (laneId: number, shouldCollapse: boolean) => {
+      const delta = SWIMLANE_HEIGHT - SWIMLANE_HEADER_HEIGHT;
+      const shiftY = shouldCollapse ? -delta : delta;
+      setNodes((prev) =>
+        prev.map((node) => {
+          const nodeLaneId = getNodeLaneId(node);
+          if (nodeLaneId <= laneId) return node;
+          return {
+            ...node,
+            position: {
+              x: node.position.x,
+              y: node.position.y + shiftY
+            }
+          };
+        })
+      );
+    },
+    [getNodeLaneId]
   );
 
   const handleToggleLaneCollapsed = useCallback(
     (laneId: number) => {
       const willCollapse = !collapsedLaneSet.has(laneId);
+      applyCollapsedLaneReflow(laneId, willCollapse);
       toggleSwimlaneCollapsed(laneId);
       if (willCollapse) {
         clearSelectionForLane(laneId);
       }
     },
-    [clearSelectionForLane, collapsedLaneSet, toggleSwimlaneCollapsed]
+    [applyCollapsedLaneReflow, clearSelectionForLane, collapsedLaneSet, toggleSwimlaneCollapsed]
   );
 
   const handleToggleLaneLocked = useCallback(
@@ -2131,6 +2270,7 @@ const App: React.FC = () => {
   );
 
   useEffect(() => {
+    if (!SWIMLANES_ENABLED) return;
     if (laneGroupingMode === 'manual') return;
     const labels = getLaneLabelsForMode(laneGroupingMode);
     if (labels.length >= 2) {
@@ -2171,7 +2311,7 @@ const App: React.FC = () => {
       persistWorkspaceIndexState(upsertWorkspaceSummary(workspaceIndex, touchedWorkspace));
       setActiveWorkspace(touchedWorkspace);
       if (typeof window !== 'undefined') {
-        window.localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, touchedWorkspace.workspaceId);
+        window.sessionStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, touchedWorkspace.workspaceId);
       }
 
       const snapshot =
@@ -2427,7 +2567,7 @@ const App: React.FC = () => {
             persistRecoveryMeta(workspaceRecoveryMetaStorageKey, { lastSavedAt: previousRecoveryTimestamp });
           } else if (typeof window !== 'undefined') {
             try {
-              window.localStorage.removeItem(workspaceRecoveryMetaStorageKey);
+              window.sessionStorage.removeItem(workspaceRecoveryMetaStorageKey);
             } catch {
               // ignore recovery meta rollback failures
             }
@@ -2698,13 +2838,47 @@ const App: React.FC = () => {
     }));
   }, [getDiagramBounds, nodes]);
 
-  const handleZoomIn = useCallback(() => {
-    setViewport((prev) => ({ ...prev, zoom: Math.min(2.5, prev.zoom * 1.12) }));
+  const setZoomAroundViewportCenter = useCallback((nextZoom: number) => {
+    const clampedZoom = clampValue(nextZoom, 0.3, 2.5);
+    setViewport((prev) => {
+      if (!containerRef.current) {
+        return { ...prev, zoom: clampedZoom };
+      }
+
+      // Keep world coordinates under viewport center fixed when zoom changes.
+      const rect = containerRef.current.getBoundingClientRect();
+      const centerX = rect.width / 2;
+      const centerY = rect.height / 2;
+      const worldX = (centerX - prev.x) / prev.zoom;
+      const worldY = (centerY - prev.y) / prev.zoom;
+
+      return {
+        zoom: clampedZoom,
+        x: centerX - worldX * clampedZoom,
+        y: centerY - worldY * clampedZoom
+      };
+    });
   }, []);
 
+  const handleZoomIn = useCallback(() => {
+    setZoomAroundViewportCenter(viewport.zoom * 1.12);
+  }, [setZoomAroundViewportCenter, viewport.zoom]);
+
   const handleZoomOut = useCallback(() => {
-    setViewport((prev) => ({ ...prev, zoom: Math.max(0.3, prev.zoom * 0.9) }));
-  }, []);
+    setZoomAroundViewportCenter(viewport.zoom * 0.9);
+  }, [setZoomAroundViewportCenter, viewport.zoom]);
+
+  const handleResetZoom = useCallback(() => {
+    setZoomAroundViewportCenter(1);
+  }, [setZoomAroundViewportCenter]);
+
+  const handleSetZoomPercent = useCallback(
+    (percent: number) => {
+      if (!Number.isFinite(percent)) return;
+      setZoomAroundViewportCenter(percent / 100);
+    },
+    [setZoomAroundViewportCenter]
+  );
 
   useEffect(() => {
     if (!hasLoadedFromStorage.current || hasInitialAutoFitRef.current) return;
@@ -2915,7 +3089,6 @@ const App: React.FC = () => {
 
       saveRecoverySnapshot();
       pushHistory();
-      const blockedLaneIds = new Set([...lockedLaneSet, ...nonRenderableLaneSet]);
       setNodes(
         generatedNodes.map((node) => {
           const safeType = isValidEntityType(node.type) ? node.type : EntityType.PROCESSOR;
@@ -2927,19 +3100,11 @@ const App: React.FC = () => {
             zIndex: 100,
             shape: safeType === EntityType.GATE ? NodeShape.DIAMOND : NodeShape.RECTANGLE
           } satisfies Node);
-          const preferredLaneId = getLaneIdFromY(node.position.y, laneCount);
-          const targetLaneId =
-            blockedLaneIds.size > 0
-              ? getNearestAllowedLaneId(preferredLaneId, laneCount, blockedLaneIds)
-              : preferredLaneId;
-          const { laneTop, laneMax } = getLaneVerticalBounds(targetLaneId, getNodeDimensions(draftNode).height);
+          const placement = resolveLanePlacement(draftNode, draftNode.position, true);
           return {
             ...draftNode,
-            position: {
-              x: draftNode.position.x,
-              y: Math.max(laneTop, Math.min(laneMax, draftNode.position.y))
-            },
-            swimlaneId: targetLaneId
+            position: placement.nextPosition,
+            ...(showSwimlanes ? { swimlaneId: placement.targetLaneId } : { swimlaneId: undefined })
           };
         })
       );
@@ -3013,6 +3178,24 @@ const App: React.FC = () => {
         return;
       }
 
+      if (isMetaOrCtrl && (key === '=' || key === '+')) {
+        event.preventDefault();
+        handleZoomIn();
+        return;
+      }
+
+      if (isMetaOrCtrl && key === '-') {
+        event.preventDefault();
+        handleZoomOut();
+        return;
+      }
+
+      if (isMetaOrCtrl && key === '0') {
+        event.preventDefault();
+        handleResetZoom();
+        return;
+      }
+
       if (event.key === 'Escape' && isCommandPaletteOpen) {
         event.preventDefault();
         setIsCommandPaletteOpen(false);
@@ -3026,6 +3209,12 @@ const App: React.FC = () => {
       }
 
       if (hasOpenEscapeLayer) {
+        return;
+      }
+
+      if (event.key === 'Escape' && activeTool !== 'select') {
+        event.preventDefault();
+        setActiveTool('select');
         return;
       }
 
@@ -3068,12 +3257,6 @@ const App: React.FC = () => {
       if (isPlainKey && key === 's') {
         event.preventDefault();
         setSnapToGrid((prev) => !prev);
-        return;
-      }
-
-      if (isPlainKey && key === 'l') {
-        event.preventDefault();
-        handleToggleSwimlanes();
         return;
       }
 
@@ -3141,12 +3324,15 @@ const App: React.FC = () => {
     window.addEventListener('keydown', handleShortcut);
     return () => window.removeEventListener('keydown', handleShortcut);
   }, [
+    activeTool,
     handleDelete,
     handleDuplicateSelection,
     handleCycleGridMode,
+    handleResetZoom,
     handleRedo,
-    handleToggleSwimlanes,
     handleUndo,
+    handleZoomIn,
+    handleZoomOut,
     isCommandPaletteOpen,
     isShortcutsOpen,
     moveSelectedNodesBy,
@@ -3185,6 +3371,58 @@ const App: React.FC = () => {
 
   const commandActions = useMemo<CommandAction[]>(
     () => [
+      {
+        id: 'tool-select',
+        label: 'Tool: Select',
+        shortcut: 'V',
+        keywords: ['tool', 'pointer', 'select'],
+        onSelect: () => setActiveTool('select')
+      },
+      {
+        id: 'tool-hand',
+        label: 'Tool: Hand',
+        shortcut: 'H',
+        keywords: ['tool', 'pan', 'hand'],
+        onSelect: () => setActiveTool('hand')
+      },
+      {
+        id: 'tool-connect',
+        label: 'Tool: Connect',
+        shortcut: 'C',
+        keywords: ['tool', 'edge', 'connect'],
+        onSelect: () => setActiveTool('draw')
+      },
+      {
+        id: 'tool-text',
+        label: 'Tool: Text',
+        shortcut: 'T',
+        keywords: ['tool', 'note', 'text'],
+        onSelect: () => setActiveTool('text')
+      },
+      {
+        id: 'view-grid',
+        label: `Toggle grid (${gridMode})`,
+        keywords: ['view', 'grid', 'dots', 'lines'],
+        onSelect: handleCycleGridMode
+      },
+      {
+        id: 'view-snap',
+        label: snapToGrid ? 'Disable snap' : 'Enable snap',
+        keywords: ['view', 'snap'],
+        onSelect: () => setSnapToGrid((prev) => !prev)
+      },
+      {
+        id: 'view-fit',
+        label: 'Fit to view',
+        keywords: ['view', 'camera', 'fit'],
+        onSelect: handleFitView
+      },
+      {
+        id: 'view-zoom-100',
+        label: 'Zoom to 100%',
+        keywords: ['view', 'zoom', 'reset', '100'],
+        onSelect: handleResetZoom
+      },
       {
         id: 'export-json',
         label: 'Export JSON',
@@ -3242,13 +3480,20 @@ const App: React.FC = () => {
         : [])
     ],
     [
+      gridMode,
+      handleCycleGridMode,
       handleExportDiagram,
       handleExportPdf,
       handleExportPng,
+      handleFitView,
       handleInsertStarterTemplate,
+      handleResetZoom,
       handleRestoreRecovery,
       isAIEnabled,
-      prefetchAIModule
+      prefetchAIModule,
+      setActiveTool,
+      setSnapToGrid,
+      snapToGrid
     ]
   );
 
@@ -3299,6 +3544,7 @@ const App: React.FC = () => {
         onToggleMinimap={() => setShowMinimap((prev) => !prev)}
         snapToGrid={snapToGrid}
         showSwimlanes={showSwimlanes}
+        enableSwimlaneToggle={SWIMLANES_ENABLED}
         showPorts={showPorts}
         showMinimap={showMinimap}
         gridMode={gridMode}
@@ -3551,7 +3797,7 @@ const App: React.FC = () => {
             swimlaneHiddenIds={swimlaneHiddenIds}
             selectedSwimlaneId={selectedSwimlaneId}
             onSelectSwimlane={handleSelectSwimlane}
-            onRenameSwimlane={handleRenameSwimlane}
+            onRenameSwimlane={commitSwimlaneLabel}
             onToggleSwimlaneCollapsed={handleToggleLaneCollapsed}
             onToggleSwimlaneLocked={handleToggleLaneLocked}
             onToggleSwimlaneHidden={handleToggleLaneHidden}
@@ -3569,7 +3815,13 @@ const App: React.FC = () => {
             isMobileViewport={isMobileViewport}
             anchor={floatingContextAnchor()}
             activeTool={activeTool}
+            zoom={viewport.zoom}
             onSetActiveTool={setActiveTool}
+            onZoomOut={handleZoomOut}
+            onZoomIn={handleZoomIn}
+            onResetZoom={handleResetZoom}
+            onFitView={handleFitView}
+            onSetZoomPercent={handleSetZoomPercent}
             onAddConnector={() => handleAddConnector()}
             onConnectorNativeDragStart={handleConnectorNativeDragStart}
             onDelete={handleDelete}
@@ -3579,15 +3831,6 @@ const App: React.FC = () => {
             onAlignRight={() => handleAlignSelectedNodes('right')}
             onDistribute={handleDistributeSelectedNodes}
             selectedNodeCount={selectedNodeIds.length}
-            hasSelectedEdge={hasSelectedEdge}
-            activeEdgeStyle={activeEdgeStyle}
-            activeEdgePathType={activeEdgePathType}
-            onSetEdgeStyle={handleSetSelectedEdgeStyle}
-            onSetEdgePathType={handleSetSelectedEdgePathType}
-            arrowHeadEnabled={activeArrowConfig.showArrowHead}
-            midArrowEnabled={activeArrowConfig.showMidArrow}
-            onToggleArrowHead={handleToggleSelectedArrowHead}
-            onToggleMidArrow={handleToggleSelectedMidArrow}
             onRenameSelection={handleRenameSelection}
             onToggleQuickAttribute={handleToggleQuickAttribute}
             isQuickAttributePinned={pinnedNodeAttributes.includes('account')}
@@ -3631,6 +3874,11 @@ const App: React.FC = () => {
               edges={edges}
               selectedNodeId={selectedNodeId}
               selectedEdgeId={selectedEdgeId}
+              selectedSwimlaneId={selectedSwimlaneId}
+              swimlaneLabels={swimlaneLabels}
+              swimlaneCollapsedIds={swimlaneCollapsedIds}
+              swimlaneLockedIds={swimlaneLockedIds}
+              swimlaneHiddenIds={swimlaneHiddenIds}
               onUpdateNode={handleUpdateNode}
               onUpdateEdge={handleUpdateEdge}
               onClose={() => setIsInspectorOpen(false)}
@@ -3640,6 +3888,11 @@ const App: React.FC = () => {
               onDuplicateSelection={handleDuplicateSelection}
               onOpenInsertPanel={handleOpenInsertPanel}
               onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+              onSelectSwimlane={handleSelectSwimlane}
+              onRenameSwimlane={commitSwimlaneLabel}
+              onToggleSwimlaneCollapsed={handleToggleLaneCollapsed}
+              onToggleSwimlaneLocked={handleToggleLaneLocked}
+              onToggleSwimlaneHidden={handleToggleLaneHidden}
             />
           )}
         </div>

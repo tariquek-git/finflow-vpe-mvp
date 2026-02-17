@@ -25,8 +25,10 @@ type DiagramNodeCardProps = {
   isDarkMode: boolean;
   pinnedAttributes: NodePinnedAttribute[];
   showPorts: boolean;
-  isConnectToolActive: boolean;
+  isConnectMode: boolean;
+  canConnectFromPorts: boolean;
   connectState: ConnectState;
+  candidatePortIdx?: number;
   isConnecting: boolean;
   onMouseDown: (event: React.MouseEvent, id: string) => void;
   onClick: (event: React.MouseEvent, id: string) => void;
@@ -38,16 +40,15 @@ type DiagramNodeCardProps = {
     role: 'source' | 'target' | 'both'
   ) => void;
   onPortMouseDown: (
-    event: React.MouseEvent,
+    event: React.PointerEvent,
     id: string,
     portIdx: number,
     role: 'source' | 'target' | 'both'
   ) => void;
+  zoom: number;
 };
 
-const PORT_HIT_SIZE = 28;
-const PORT_HALF = PORT_HIT_SIZE / 2;
-const PORT_DOT_SIZE = 12;
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
 const getNodeAccountType = (node: Node) =>
   normalizeNodeAccountType(node.data?.accountType, node.accountType);
@@ -143,6 +144,12 @@ const normalizeChipToken = (value: string) =>
     .replace(/[^a-z0-9]+/g, '')
     .trim();
 
+const normalizeDisplayToken = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
 const getPinnedAttributeChips = (node: Node, pins: NodePinnedAttribute[]) => {
   const chips: string[] = [];
   const seen = new Set<string>();
@@ -234,14 +241,17 @@ const DiagramNodeCardComponent: React.FC<DiagramNodeCardProps> = ({
   isDarkMode,
   pinnedAttributes,
   showPorts,
-  isConnectToolActive,
+  isConnectMode,
+  canConnectFromPorts,
   connectState,
+  candidatePortIdx,
   isConnecting,
   onMouseDown,
   onClick,
   onContextMenu,
   onPortClick,
-  onPortMouseDown
+  onPortMouseDown,
+  zoom
 }) => {
   const [isHovered, setIsHovered] = useState(false);
   const family = getNodeFamily(node.type);
@@ -261,6 +271,7 @@ const DiagramNodeCardComponent: React.FC<DiagramNodeCardProps> = ({
     [node, pinnedAttributes]
   );
   const chipCandidates = useMemo(() => {
+    const titleToken = normalizeChipToken(node.label || node.type);
     const combined = [...attributeChips, ...displayItems];
     const unique: string[] = [];
     const seen = new Set<string>();
@@ -269,23 +280,36 @@ const DiagramNodeCardComponent: React.FC<DiagramNodeCardProps> = ({
       const normalized = item.trim();
       if (!normalized) continue;
       const token = normalizeChipToken(normalized);
+      if (token === titleToken) continue;
       if (seen.has(token)) continue;
       seen.add(token);
       unique.push(normalized);
     }
 
     return unique;
-  }, [attributeChips, displayItems]);
+  }, [attributeChips, displayItems, node.label, node.type]);
   const visibleItems = chipCandidates.slice(0, 3);
   const overflowItems = chipCandidates.slice(3);
   const hiddenCount = overflowItems.length;
   const compactTitle = node.label || node.type;
   const headerTitle = node.label || node.type;
   const showTypeBadge = node.data?.showType ?? true;
+  const shouldShowTypeBadge =
+    !!semanticBadge &&
+    showTypeBadge &&
+    normalizeDisplayToken(semanticBadge) !== normalizeDisplayToken(headerTitle);
   const shouldRenderHandles =
     !isLocked &&
-    (isConnectToolActive || connectState !== 'idle' || isSelected || (showPorts && isHovered) || isConnecting);
-  const isPortInteractive = isConnectToolActive || connectState !== 'idle';
+    (isConnectMode || connectState !== 'idle' || isSelected || (showPorts && isHovered) || isConnecting);
+  const isPortInteractive = canConnectFromPorts || connectState !== 'idle';
+  // Keep port hit areas from stealing unrelated UI clicks (e.g. lane header controls)
+  // unless the node is actively in a connect-focused state.
+  const allowPortPointerEvents =
+    isPortInteractive && (isSelected || isConnectMode || connectState !== 'idle' || isConnecting);
+  const portHitSize = clamp(26 / Math.max(zoom, 0.01), 8, 60);
+  const portHalf = portHitSize / 2;
+  const portDotSize = clamp(10 / Math.max(zoom, 0.01), 4, 24);
+  const showStatusFooter = showFooter && statuses.length > 0 && (isSelected || isHovered || connectState !== 'idle');
 
   if (node.type === EntityType.ANCHOR) {
     return (
@@ -371,7 +395,7 @@ const DiagramNodeCardComponent: React.FC<DiagramNodeCardProps> = ({
               <div className="truncate pt-0.5 text-[12px] font-semibold text-slate-800 dark:text-slate-100">
                 {headerTitle}
               </div>
-              {semanticBadge && showTypeBadge ? (
+              {shouldShowTypeBadge ? (
                 <div className="inline-flex rounded-full border border-slate-200/70 bg-slate-50/85 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.06em] text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/85 dark:text-slate-300">
                   {semanticBadge}
                 </div>
@@ -425,7 +449,7 @@ const DiagramNodeCardComponent: React.FC<DiagramNodeCardProps> = ({
             </div>
           ) : null}
 
-          {showFooter && statuses.length > 0 ? (
+          {showStatusFooter ? (
             <div
               data-testid={`node-status-${node.id}`}
               className="flex items-center gap-1.5 px-3 pb-1.5 pt-0.5"
@@ -454,7 +478,10 @@ const DiagramNodeCardComponent: React.FC<DiagramNodeCardProps> = ({
               const isSourceRole = role === 'source' || role === 'both';
               const isTargetRole = role === 'target' || role === 'both';
               const isSourceLocked = connectState === 'source' && isSourceRole;
-              const isValidCandidate = connectState === 'candidate' && isTargetRole;
+              const isValidCandidate =
+                connectState === 'candidate' &&
+                isTargetRole &&
+                (candidatePortIdx === undefined || candidatePortIdx === portIdx);
               const sideLabel =
                 portIdx === 0 ? 'top' : portIdx === 1 ? 'right' : portIdx === 2 ? 'bottom' : 'left';
               const nodeLabel = node.label || node.type;
@@ -474,48 +501,55 @@ const DiagramNodeCardComponent: React.FC<DiagramNodeCardProps> = ({
                         : isDarkMode
                           ? 'border-slate-600/80 bg-slate-900/78'
                           : 'border-slate-300/85 bg-white/88'
-                  } ${isPortInteractive ? 'pointer-events-auto hover:scale-110 hover:ring-2 hover:ring-cyan-400/55 dark:hover:ring-cyan-300/45' : 'pointer-events-none'}`}
+                  } ${allowPortPointerEvents ? 'pointer-events-auto hover:scale-110 hover:ring-2 hover:ring-cyan-400/55 dark:hover:ring-cyan-300/45' : 'pointer-events-none'}`}
                   style={
                     portIdx === 0
                       ? {
                           left: '50%',
-                          top: -PORT_HALF,
+                          top: -portHalf,
                           transform: 'translateX(-50%)',
-                          width: PORT_HIT_SIZE,
-                          height: PORT_HIT_SIZE
+                          width: portHitSize,
+                          height: portHitSize
                         }
                       : portIdx === 1
                         ? {
-                            right: -PORT_HALF,
+                            right: -portHalf,
                             top: '50%',
                             transform: 'translateY(-50%)',
-                            width: PORT_HIT_SIZE,
-                            height: PORT_HIT_SIZE
+                            width: portHitSize,
+                            height: portHitSize
                           }
                         : portIdx === 2
                           ? {
                               left: '50%',
-                              bottom: -PORT_HALF,
+                              bottom: -portHalf,
                               transform: 'translateX(-50%)',
-                              width: PORT_HIT_SIZE,
-                              height: PORT_HIT_SIZE
+                              width: portHitSize,
+                              height: portHitSize
                             }
                           : {
-                              left: -PORT_HALF,
+                              left: -portHalf,
                               top: '50%',
                               transform: 'translateY(-50%)',
-                              width: PORT_HIT_SIZE,
-                              height: PORT_HIT_SIZE
+                              width: portHitSize,
+                              height: portHitSize
                             }
                   }
                   data-testid={`node-port-${node.id}-${portIdx}`}
                   data-port-role={role}
                   aria-label={handleLabel}
                   title={handleLabel}
-                  onMouseDown={(event) => {
+                  onPointerDown={(event) => {
                     if (!isPortInteractive) return;
+                    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+                      event.currentTarget.releasePointerCapture(event.pointerId);
+                    }
+                    event.currentTarget.setPointerCapture(event.pointerId);
                     event.stopPropagation();
                     onPortMouseDown(event, node.id, portIdx, role);
+                  }}
+                  onMouseDown={(event) => {
+                    event.stopPropagation();
                   }}
                   onClick={(event) => {
                     if (!isPortInteractive) return;
@@ -534,7 +568,7 @@ const DiagramNodeCardComponent: React.FC<DiagramNodeCardProps> = ({
                             ? 'bg-cyan-500'
                             : 'bg-indigo-500'
                     }`}
-                    style={{ width: PORT_DOT_SIZE, height: PORT_DOT_SIZE }}
+                    style={{ width: portDotSize, height: portDotSize }}
                   />
                 </button>
               );
