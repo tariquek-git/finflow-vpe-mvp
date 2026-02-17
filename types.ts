@@ -85,9 +85,74 @@ export enum FlowDirection {
 
 export enum NodeShape {
   RECTANGLE = 'rectangle',
+  ROUNDED_RECTANGLE = 'rounded-rectangle',
+  SQUARE = 'square',
   CIRCLE = 'circle',
   CYLINDER = 'cylinder',
   DIAMOND = 'diamond',
+  PILL = 'pill'
+}
+
+export const NODE_ACCOUNT_TYPE_OPTIONS = [
+  'DDA',
+  'FBO',
+  'Reserve',
+  'Settlement',
+  'Nostro',
+  'Vostro',
+  'Wallet',
+  'Ledger',
+  'Clearing',
+  'Prefund',
+  'Chargeback',
+  'Suspense',
+  'Trust',
+  'Escrow',
+  'Other'
+] as const;
+
+export type NodeAccountType = (typeof NODE_ACCOUNT_TYPE_OPTIONS)[number];
+export type NodeDisplayStyle = 'chips' | 'compact' | 'hidden';
+export type NodeBorderStyle = 'solid' | 'dashed' | 'dotted';
+export type NodeHandleSide = 'top' | 'right' | 'bottom' | 'left';
+
+export interface NodeHandleConfig {
+  sources?: NodeHandleSide[];
+  targets?: NodeHandleSide[];
+  bidirectional?: boolean;
+}
+
+export interface NodeData {
+  [key: string]: unknown;
+  isNameAuto?: boolean;
+  accountType?: NodeAccountType;
+  accountDetails?: string;
+  showLabel?: boolean;
+  showType?: boolean;
+  showAccount?: boolean;
+  showAccountDetails?: boolean;
+  displayStyle?: NodeDisplayStyle;
+  shape?: NodeShape;
+  fillColor?: string;
+  borderColor?: string;
+  borderWidth?: number;
+  borderStyle?: NodeBorderStyle;
+  opacity?: number;
+  isPhantom?: boolean;
+  isLocked?: boolean;
+  scale?: number;
+  notes?: string;
+  handleConfig?: NodeHandleConfig;
+}
+
+export interface EdgeData {
+  [key: string]: unknown;
+  notes?: string;
+  flowType?: string;
+  flowTypeCustom?: string;
+  timingPreset?: string;
+  timingCustom?: string;
+  railCustom?: string;
 }
 
 export enum TimingType {
@@ -113,9 +178,10 @@ export interface Node {
   id: string;
   type: EntityType;
   label: string;
+  isNameAuto?: boolean;
   shape: NodeShape;
   endPointType?: EndPointType; 
-  accountType?: AccountType;
+  accountType?: AccountType | NodeAccountType;
   position: Position;
   zIndex?: number;
   swimlaneId?: number;
@@ -124,6 +190,7 @@ export interface Node {
   width?: number;
   height?: number;
   isConnectorHandle?: boolean;
+  data?: NodeData;
 }
 
 export interface Edge {
@@ -161,6 +228,7 @@ export interface Edge {
   showArrowHead: boolean;
   showMidArrow?: boolean;
   thickness?: number;
+  data?: EdgeData;
 }
 
 export interface DrawingPath {
@@ -170,13 +238,15 @@ export interface DrawingPath {
   width: number;
 }
 
-export type ToolMode = 'select' | 'draw' | 'text';
+export type ToolMode = 'select' | 'hand' | 'draw' | 'text';
 export type GridMode = 'none' | 'lines' | 'dots';
 export type OverlayMode = 'none' | 'risk' | 'ledger' | 'both';
 export type LaneGroupingMode = 'manual' | 'entity' | 'regulatory' | 'geography' | 'ledger';
 export type ExportFormat = 'json' | 'png' | 'pdf' | 'svg';
+export type NodePinnedAttribute = 'role' | 'account' | 'lane' | 'endpoint';
 
 export interface DiagramSnapshot {
+  schemaVersion: number;
   nodes: Node[];
   edges: Edge[];
   drawings: DrawingPath[];
@@ -185,13 +255,30 @@ export interface DiagramSnapshot {
 export interface LayoutSettings {
   showSwimlanes: boolean;
   swimlaneLabels: string[];
+  swimlaneCollapsedIds?: number[];
+  swimlaneLockedIds?: number[];
+  swimlaneHiddenIds?: number[];
   gridMode: GridMode;
   isDarkMode: boolean;
   showPorts: boolean;
 }
 
+export interface WorkspaceSummary {
+  workspaceId: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  lastOpenedAt: string;
+}
+
 export interface ExportPayloadV2 {
-  version: 2;
+  version: 2 | 3 | 4;
+  workspaceId?: string;
+  shortWorkspaceId?: string;
+  name?: string;
+  schemaVersion?: number;
+  createdAt?: string;
+  updatedAt?: string;
   diagram: DiagramSnapshot;
   layout: LayoutSettings;
 }
