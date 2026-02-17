@@ -53,7 +53,8 @@ const DiagramEdgePathComponent: React.FC<DiagramEdgePathProps> = ({
   const start = getPortPosition(source, edge.sourcePortIdx);
   const end = getPortPosition(target, edge.targetPortIdx);
   const railColor = edge.isExceptionPath ? '#ef4444' : RAIL_COLORS[edge.rail] || (isDarkMode ? '#818cf8' : '#4f46e5');
-  const neutralColor = isDarkMode ? '#5b6b84' : '#9aa8ba';
+  // Quiet-by-default: keep unselected edges subdued so nodes remain the hero.
+  const neutralColor = isDarkMode ? '#6b7a92' : '#8fa1b6';
 
   let strokeDash = '';
   if (edge.style === 'dashed' || edge.isExceptionPath) strokeDash = '6,4';
@@ -103,9 +104,9 @@ const DiagramEdgePathComponent: React.FC<DiagramEdgePathProps> = ({
     };
   }, [edge.curvature, edge.pathType, edge.sourcePortIdx, edge.targetPortIdx, end.x, end.y, offsetIndex, start.x, start.y, totalEdges]);
 
-  const strokeWidth = isSelected ? 3.1 : isHovered ? 2.2 : clamp(edge.thickness || 1.5, 1.2, 1.8);
+  const strokeWidth = isSelected ? 3.0 : isHovered ? 2.2 : clamp(edge.thickness || 1.5, 1.2, 1.75);
   const strokeColor = isSelected ? railColor : isHovered ? railColor : neutralColor;
-  const strokeOpacity = isSelected ? 0.98 : isHovered ? 0.78 : 0.52;
+  const strokeOpacity = isSelected ? 0.98 : isHovered ? 0.74 : 0.38;
   const hitStrokeWidth = 14;
   const reconnectHandleRadius = clamp(9 / Math.max(zoom, 0.01), 4, 20);
   const reconnectDotRadius = clamp(3.5 / Math.max(zoom, 0.01), 1.8, 8);
@@ -166,7 +167,7 @@ const DiagramEdgePathComponent: React.FC<DiagramEdgePathProps> = ({
       <path
         d={pathMeta.d}
         stroke={railColor}
-        strokeWidth={isSelected ? 6 : 4.5}
+        strokeWidth={isSelected ? 6 : 4}
         fill="none"
         opacity={isSelected ? 0.22 : 0}
         className="pointer-events-none transition-opacity duration-150"
@@ -183,13 +184,13 @@ const DiagramEdgePathComponent: React.FC<DiagramEdgePathProps> = ({
 
       {edge.showArrowHead ? (
         <g transform={`translate(${end.x}, ${end.y}) rotate(${endAngle})`}>
-          <path d="M -9 -4.5 L 0 0 L -9 4.5 Z" fill={strokeColor} opacity={isSelected ? 1 : 0.85} />
+          <path d="M -8.2 -4.1 L 0 0 L -8.2 4.1 Z" fill={strokeColor} opacity={isSelected ? 1 : 0.82} />
         </g>
       ) : null}
 
       {edge.showMidArrow ? (
         <g transform={`translate(${pathMeta.labelX}, ${pathMeta.labelY}) rotate(${endAngle})`}>
-          <path d="M -7 -3.5 L 0 0 L -7 3.5 Z" fill={strokeColor} opacity={0.9} />
+          <path d="M -6.4 -3.2 L 0 0 L -6.4 3.2 Z" fill={strokeColor} opacity={0.86} />
         </g>
       ) : null}
 
@@ -265,19 +266,18 @@ const DiagramEdgePathComponent: React.FC<DiagramEdgePathProps> = ({
         >
           <div className="flex justify-center">
             <div
-              className={`rounded-full border px-1 py-[1px] text-[8px] font-medium tracking-[0.01em] whitespace-nowrap ${
+              className={`rounded-full border px-1.5 py-[1px] text-[9px] font-medium tracking-[0.01em] whitespace-nowrap backdrop-blur ${
                 isSelected
                   ? isDarkMode
-                    ? 'border-indigo-300/60 bg-indigo-500/18 text-indigo-100'
-                    : 'border-indigo-300/70 bg-indigo-50/85 text-indigo-700'
+                    ? 'border-indigo-300/55 bg-indigo-500/16 text-indigo-100'
+                    : 'border-indigo-300/65 bg-indigo-50/80 text-indigo-700'
                   : isHovered
                     ? isDarkMode
-                      ? 'border-slate-500/80 bg-slate-900/88 text-slate-200'
-                      : 'border-slate-300/90 bg-white/90 text-slate-700'
-                    :
-                isDarkMode
-                  ? 'border-slate-600/60 bg-slate-900/78 text-slate-300'
-                  : 'border-slate-300/65 bg-white/75 text-slate-500'
+                      ? 'border-slate-500/70 bg-slate-950/75 text-slate-200'
+                      : 'border-slate-300/80 bg-white/85 text-slate-700'
+                    : isDarkMode
+                      ? 'border-slate-700/55 bg-slate-950/65 text-slate-300'
+                      : 'border-slate-300/55 bg-white/70 text-slate-500'
               }`}
             >
               {labelText}

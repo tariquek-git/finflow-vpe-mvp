@@ -199,27 +199,27 @@ const statusDotClass = (status: string, isDarkMode: boolean) => {
 const getFamilyClasses = (family: ReturnType<typeof getNodeFamily>, isDarkMode: boolean) => {
   if (family === 'bank') {
     return isDarkMode
-      ? 'border-slate-600/75 bg-slate-900/92'
-      : 'border-slate-300/80 bg-white/96';
+      ? 'border-slate-700/55 bg-slate-950/70'
+      : 'border-slate-300/70 bg-white/92';
   }
   if (family === 'ops') {
     return isDarkMode
-      ? 'border-slate-600/75 bg-slate-900/92'
-      : 'border-slate-300/80 bg-white/96';
+      ? 'border-slate-700/55 bg-slate-950/70'
+      : 'border-slate-300/70 bg-white/92';
   }
   if (family === 'control') {
     return isDarkMode
-      ? 'border-slate-600/75 bg-slate-900/92'
-      : 'border-slate-300/80 bg-white/96';
+      ? 'border-slate-700/55 bg-slate-950/70'
+      : 'border-slate-300/70 bg-white/92';
   }
   if (family === 'endpoint') {
     return isDarkMode
-      ? 'border-slate-600/75 bg-slate-900/92'
-      : 'border-slate-300/80 bg-white/96';
+      ? 'border-slate-700/55 bg-slate-950/70'
+      : 'border-slate-300/70 bg-white/92';
   }
   return isDarkMode
-    ? 'border-slate-600/75 bg-slate-900/92'
-    : 'border-slate-300/80 bg-white/96';
+    ? 'border-slate-700/55 bg-slate-950/70'
+    : 'border-slate-300/70 bg-white/92';
 };
 
 const getShapeClass = (shape: NodeShape) => {
@@ -341,7 +341,7 @@ const DiagramNodeCardComponent: React.FC<DiagramNodeCardProps> = ({
 
   return (
     <div
-      className={`group absolute flex flex-col border shadow-[0_5px_14px_rgba(15,23,42,0.08)] transition-[transform,box-shadow,border-color,opacity] duration-150 will-change-transform ${
+      className={`group absolute flex flex-col border shadow-[0_2px_10px_rgba(15,23,42,0.06)] transition-[transform,box-shadow,border-color,opacity] duration-150 will-change-transform ${
         isLocked ? 'cursor-not-allowed' : 'cursor-grab active:cursor-grabbing'
       } ${getShapeClass(
         shape
@@ -352,7 +352,7 @@ const DiagramNodeCardComponent: React.FC<DiagramNodeCardProps> = ({
             ? 'scale-[1.01] border-[var(--ff-accent-primary)] ring-2 ring-[color-mix(in_srgb,var(--ff-accent-primary)_30%,transparent)] shadow-[0_10px_24px_rgba(79,70,229,0.2)]'
             : connectState === 'candidate'
               ? 'border-sky-400 ring-2 ring-sky-300/80'
-              : `${isLocked ? '' : 'hover:-translate-y-[1px]'} hover:shadow-[0_10px_22px_rgba(15,23,42,0.12)]`
+              : `${isLocked ? '' : 'hover:-translate-y-[1px]'} hover:shadow-[0_10px_22px_rgba(15,23,42,0.10)]`
       }`}
       style={{
         left: node.position.x,
@@ -380,7 +380,7 @@ const DiagramNodeCardComponent: React.FC<DiagramNodeCardProps> = ({
     >
       {compactMode ? (
         <div className="flex min-h-[40px] items-center gap-1.5 px-2 py-1.5">
-          <div className="flex h-5 w-5 items-center justify-center rounded-md border border-slate-200/75 bg-slate-50/85 dark:border-slate-700/80 dark:bg-slate-800/85">
+          <div className="flex h-5 w-5 items-center justify-center rounded-md border border-slate-200/65 bg-white/70 dark:border-slate-700/70 dark:bg-slate-900/45">
             <span className="scale-90">{iconNode}</span>
           </div>
           <span className="truncate text-[11px] font-medium text-slate-700 dark:text-slate-200">{compactTitle}</span>
@@ -388,7 +388,7 @@ const DiagramNodeCardComponent: React.FC<DiagramNodeCardProps> = ({
       ) : (
         <>
           <div className="flex items-start gap-2 px-3 pb-1.5 pt-2.5">
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200/75 bg-slate-50/90 dark:border-slate-700/80 dark:bg-slate-800/90">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200/60 bg-white/70 dark:border-slate-700/65 dark:bg-slate-900/45">
               {iconNode}
             </div>
             <div className="min-w-0 flex flex-1 items-start justify-between gap-2">
@@ -396,7 +396,7 @@ const DiagramNodeCardComponent: React.FC<DiagramNodeCardProps> = ({
                 {headerTitle}
               </div>
               {shouldShowTypeBadge ? (
-                <div className="inline-flex rounded-full border border-slate-200/70 bg-slate-50/85 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.06em] text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/85 dark:text-slate-300">
+                <div className="inline-flex rounded-full border border-slate-200/55 bg-white/65 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.06em] text-slate-500 dark:border-slate-700/60 dark:bg-slate-950/45 dark:text-slate-300">
                   {semanticBadge}
                 </div>
               ) : null}
@@ -429,14 +429,14 @@ const DiagramNodeCardComponent: React.FC<DiagramNodeCardProps> = ({
                   {(visibleItems.length > 0 ? visibleItems : attributeChips.slice(0, 3)).map((chip) => (
                     <span
                       key={`${node.id}-${chip}`}
-                      className="rounded-full border border-slate-200/70 bg-slate-50/85 px-1.5 py-0.5 text-[8px] font-medium uppercase tracking-[0.05em] text-slate-600 dark:border-slate-700/80 dark:bg-slate-800/85 dark:text-slate-300"
+                      className="rounded-full border border-slate-200/55 bg-white/65 px-1.5 py-0.5 text-[8px] font-medium uppercase tracking-[0.05em] text-slate-600 dark:border-slate-700/60 dark:bg-slate-950/45 dark:text-slate-300"
                     >
                       {chip}
                     </span>
                   ))}
                   {hiddenCount > 0 ? (
                     <span className="group/overflow relative inline-flex">
-                      <span className="rounded-full border border-slate-200/70 bg-slate-50/85 px-1.5 py-0.5 text-[8px] font-medium uppercase tracking-[0.05em] text-slate-600 dark:border-slate-700/80 dark:bg-slate-800/85 dark:text-slate-300">
+                      <span className="rounded-full border border-slate-200/55 bg-white/65 px-1.5 py-0.5 text-[8px] font-medium uppercase tracking-[0.05em] text-slate-600 dark:border-slate-700/60 dark:bg-slate-950/45 dark:text-slate-300">
                         +{hiddenCount}
                       </span>
                       <span className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden min-w-[7rem] rounded-md border border-slate-200 bg-white px-2 py-1 text-[9px] text-slate-600 shadow-lg group-hover/overflow:block dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
